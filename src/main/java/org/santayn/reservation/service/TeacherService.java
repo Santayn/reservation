@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @Service @RequiredArgsConstructor
 public class TeacherService {
@@ -35,5 +36,14 @@ public class TeacherService {
         return repo.findAll().stream()
                 .map(t -> new TeacherDto(t.getId(), t.getFullName(), t.getLogin(), t.getFaculty().getId()))
                 .toList();
+    }
+
+    @Transactional
+    public void delete(Long id) {
+         // безопасно, если id помещается в int
+        if (!repo.existsById(id)) {
+            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        }
+        repo.deleteById(id);
     }
 }

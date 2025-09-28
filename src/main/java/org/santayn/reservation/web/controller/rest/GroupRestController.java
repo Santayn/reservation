@@ -1,4 +1,3 @@
-// org/santayn/reservation/web/controller/rest/GroupRestController.java
 package org.santayn.reservation.web.controller.rest;
 
 import jakarta.validation.Valid;
@@ -24,5 +23,12 @@ public class GroupRestController {
     @GetMapping
     public ResponseEntity<List<GroupDto>> list() {
         return ResponseEntity.ok(service.list());
+    }
+
+    // 🔥 Удалить группу по id
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        service.delete(id); // реализуй в GroupService (например, repository.deleteById(id))
+        return ResponseEntity.noContent().build();
     }
 }

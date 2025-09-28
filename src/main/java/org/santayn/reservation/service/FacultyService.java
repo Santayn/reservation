@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @Service @RequiredArgsConstructor
 public class FacultyService {
@@ -18,6 +19,15 @@ public class FacultyService {
     public FacultyDto create(FacultyCreateRequest r) {
         var f = repo.save(Faculty.builder().name(r.name()).build());
         return new FacultyDto(f.getId(), f.getName());
+    }
+
+    @Transactional
+    public void delete(Long id) {
+
+        if (!repo.existsById(id)) {
+            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        }
+        repo.deleteById(id);
     }
 
     public List<FacultyDto> list() {

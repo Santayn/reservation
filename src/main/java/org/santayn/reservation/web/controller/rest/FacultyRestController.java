@@ -25,4 +25,10 @@ public class FacultyRestController {
     public ResponseEntity<List<FacultyDto>> list() {
         return ResponseEntity.ok(service.list());
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        service.delete(id); // реализуй в GroupService (например, repository.deleteById(id))
+        return ResponseEntity.noContent().build();
+    }
 }

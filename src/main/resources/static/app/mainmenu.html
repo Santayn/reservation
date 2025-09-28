@@ -1,40 +1,377 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>Main Menu</title>
-    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Схема здания с этажами</title>
+    <style>
+        :root {
+          --line: #222;
+          --bg: #f7f7f9;
+          --accent: #0066ff20; /* свободно */
+          --hover: #0066ff33;
+          --text: #1a1a1a;
+          --busy: #ffd6d6; /* занято */
+          --busy-border: #ff9a9a;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+          color: var(--text); background: var(--bg);
+          display: grid; place-items: start center;
+        }
+        .wrap { width: min(1200px, 96vw); padding: 28px 16px 48px; }
+        h1 { margin: 0 0 6px; font-size: 20px; }
+        p.lead { margin: 0 8px 18px 0; color: #555; font-size: 14px; display: inline-block; }
+
+        /* Панель управления */
+        .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .toolbar .group { display: flex; align-items: center; gap: 8px; }
+        .toolbar select, .toolbar button { border: 2px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+        .toolbar .legend { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #555; }
+        .legend em { display: inline-block; width: 16px; height: 16px; border-radius: 4px; margin-right: 6px; vertical-align: middle; }
+        .legend .free { background: var(--accent); border: 1px dashed #999; }
+        .legend .busy { background: var(--busy); border: 1px solid var(--busy-border); }
+
+        /* Кнопки действий */
+        .toolbar .actions { margin-left: auto; display: flex; gap: 8px; }
+        .btn { border: 2px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; text-decoration: none; font-weight: 600; }
+        .btn-menu { background: #2563eb; color: #fff; border-color: #2563eb; }
+        .btn-logout { background: #fff; color: var(--text); }
+        .btn:hover { filter: brightness(0.97); }
+
+        .building {
+          position: relative;
+          border: 2px solid var(--line);
+          background: #fff;
+          border-radius: 10px 10px 4px 4px;
+          min-height: 400px;
+        }
+        .wings { display: grid; grid-template-columns: 2fr 1.5fr 2fr; min-height: 320px; }
+        .wing { border-right: 2px solid var(--line); padding: 14px; overflow-y: auto; }
+        .wing:last-child { border-right: none; }
+        .wing h3 { margin: 0 0 10px; font-size: 14px; text-align: center; }
+
+        .rooms { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 10px; }
+        .room { border: 2px dashed #999; border-radius: 6px; padding: 6px; text-align: center; font-size: 11px; background: var(--accent); cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+        .room:hover { background: var(--hover); }
+        .room.busy { background: var(--busy); border-color: var(--busy-border); }
+        .center { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+        .center .room:not(.foyer) { width: 90%; margin-bottom: 16px; font-size: 13px; }
+
+        .foyer {
+          display: block;
+          width: 100%;
+          margin: 0 auto;
+          background: #eee;
+          border: 2px solid var(--line);
+          border-radius: 8px;
+          padding: 20px;
+          font-size: 16px;
+          font-weight: 600;
+          text-align: center;
+          cursor: default;
+        }
+
+        .entrance { width: 160px; height: 80px; margin: -2px auto 0; border: 2px solid var(--line); border-top: none; border-radius: 0 0 80px 80px; background: #eee; display: grid; place-items: center; font-size: 12px; }
+
+        /* Переключатель этажей */
+        .floor-switch { display: flex; gap: 10px; }
+        .floor-switch button { border: 2px solid var(--line); background: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .floor-switch button.active { background: var(--hover); font-weight: bold; }
+
+        .floor { display: none; }
+        .floor.active { display: block; }
+
+        /* Выезжающее окно бронирования */
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 999; }
+        .overlay.open { opacity: 1; pointer-events: auto; }
+
+        .drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(420px, 92vw); background: #fff; border-left: 2px solid var(--line); transform: translateX(100%); transition: transform .25s ease; z-index: 1000; display: flex; flex-direction: column; }
+        .drawer.open { transform: translateX(0); }
+        .drawer header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 2px solid var(--line); }
+        .drawer h2 { margin: 0; font-size: 16px; }
+        .drawer .close { border: 2px solid var(--line); background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+        .drawer .content { padding: 12px 16px; overflow-y: auto; }
+        .slots { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+        .slot { width: 100%; border: 2px solid var(--line); background: #fff; border-radius: 8px; padding: 10px; text-align: left; cursor: pointer; }
+        .slot[disabled] { opacity: .6; cursor: not-allowed; }
+        .slot:hover { background: var(--hover); }
+        .slot small { color: #555; }
+    </style>
 </head>
 <body>
-<div class="screen">
-    <section class="card" style="max-width:640px;width:100%">
-        <h1 style="margin:0 0 6px;">Добро пожаловать!</h1>
-        <div class="muted">Вы вошли в систему. Ниже — быстрые действия.</div>
+<div class="wrap">
+    <h1>Схема здания с 3 этажами</h1>
+    <p class="lead">Переключай карту по временному слоту, чтобы видеть свободные аудитории. Бронированные подсвечиваются светло-красным.</p>
 
-        <div id="me" style="margin-top:14px;">
-            <div class="kv"><div class="muted">Имя:</div><div id="me-name">—</div></div>
-            <div class="kv"><div class="muted">Логин:</div><div id="me-login">—</div></div>
-            <div class="kv"><div class="muted">Роль:</div><div id="me-role">—</div></div>
+    <div class="toolbar">
+        <div class="group floor-switch" aria-label="Этажи">
+            <strong>Этаж:</strong>
+            <button data-floor="1" class="active">1</button>
+            <button data-floor="2">2</button>
+            <button data-floor="3">3</button>
         </div>
 
+        <div class="group" aria-label="Слот времени">
+            <strong>Слот:</strong>
+            <select id="slot-filter"></select>
+        </div>
+
+        <div class="legend" aria-hidden="true">
+            <span><em class="free"></em> Свободно</span>
+            <span><em class="busy"></em> Занято</span>
+        </div>
+
+        <!-- Добавленные кнопки -->
         <div class="actions">
-            <a class="btn primary" href="/cabinet/index.html">Перейти в личный кабинет</a>
-            <a class="btn" href="/logout">Выйти</a>
+            <a class="btn btn-menu" href="/cabinet/me.html">Личный кабинет</a>
+            <a class="btn btn-logout" href="/logout">Выход</a>
         </div>
+    </div>
 
-        <div class="muted" style="margin-top:10px;">REST: <code>/api/v1/users/me</code></div>
-    </section>
+    <div class="building">
+        <div class="wings">
+            <!-- Левое крыло -->
+            <section class="wing left">
+                <h3>Левый корпус</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 101" data-capacity="30">Ауд. 101 (30)</div>
+                        <div class="room" data-room="Ауд. 102" data-capacity="25">Ауд. 102 (25)</div>
+                        <div class="room" data-room="Ауд. 103" data-capacity="40">Ауд. 103 (40)</div>
+                        <div class="room" data-room="Ауд. 104" data-capacity="28">Ауд. 104 (28)</div>
+                        <div class="room" data-room="Ауд. 105" data-capacity="35">Ауд. 105 (35)</div>
+                        <div class="room" data-room="Ауд. 106" data-capacity="22">Ауд. 106 (22)</div>
+                        <div class="room" data-room="Ауд. 107" data-capacity="32">Ауд. 107 (32)</div>
+                        <div class="room" data-room="Ауд. 108" data-capacity="27">Ауд. 108 (27)</div>
+                        <div class="room" data-room="Ауд. 109" data-capacity="40">Ауд. 109 (40)</div>
+                        <div class="room" data-room="Ауд. 110" data-capacity="36">Ауд. 110 (36)</div>
+                    </div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 201" data-capacity="34">Ауд. 201 (34)</div>
+                        <div class="room" data-room="Ауд. 202" data-capacity="26">Ауд. 202 (26)</div>
+                        <div class="room" data-room="Ауд. 203" data-capacity="38">Ауд. 203 (38)</div>
+                        <div class="room" data-room="Ауд. 204" data-capacity="25">Ауд. 204 (25)</div>
+                        <div class="room" data-room="Ауд. 205" data-capacity="42">Ауд. 205 (42)</div>
+                        <div class="room" data-room="Ауд. 206" data-capacity="29">Ауд. 206 (29)</div>
+                        <div class="room" data-room="Ауд. 207" data-capacity="31">Ауд. 207 (31)</div>
+                        <div class="room" data-room="Ауд. 208" data-capacity="24">Ауд. 208 (24)</div>
+                        <div class="room" data-room="Ауд. 209" data-capacity="39">Ауд. 209 (39)</div>
+                        <div class="room" data-room="Ауд. 210" data-capacity="30">Ауд. 210 (30)</div>
+                    </div>
+                </div>
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 301" data-capacity="28">Ауд. 301 (28)</div>
+                        <div class="room" data-room="Ауд. 302" data-capacity="33">Ауд. 302 (33)</div>
+                        <div class="room" data-room="Ауд. 303" data-capacity="40">Ауд. 303 (40)</div>
+                        <div class="room" data-room="Ауд. 304" data-capacity="23">Ауд. 304 (23)</div>
+                        <div class="room" data-room="Ауд. 305" data-capacity="35">Ауд. 305 (35)</div>
+                        <div class="room" data-room="Ауд. 306" data-capacity="21">Ауд. 306 (21)</div>
+                        <div class="room" data-room="Ауд. 307" data-capacity="27">Ауд. 307 (27)</div>
+                        <div class="room" data-room="Ауд. 308" data-capacity="37">Ауд. 308 (37)</div>
+                        <div class="room" data-room="Ауд. 309" data-capacity="41">Ауд. 309 (41)</div>
+                        <div class="room" data-room="Ауд. 310" data-capacity="30">Ауд. 310 (30)</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Центр -->
+            <section class="wing center">
+                <h3>Центр</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="room foyer">Фойе</div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <button class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                </div>
+                <div class="floor" data-floor="3">
+                    <button class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                </div>
+            </section>
+
+            <!-- Правое крыло -->
+            <section class="wing right">
+                <h3>Правый корпус</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 111" data-capacity="28">Ауд. 111 (28)</div>
+                        <div class="room" data-room="Ауд. 112" data-capacity="26">Ауд. 112 (26)</div>
+                        <div class="room" data-room="Ауд. 113" data-capacity="32">Ауд. 113 (32)</div>
+                        <div class="room" data-room="Ауд. 114" data-capacity="24">Ауд. 114 (24)</div>
+                        <div class="room" data-room="Ауд. 115" data-capacity="39">Ауд. 115 (39)</div>
+                        <div class="room" data-room="Ауд. 116" data-capacity="21">Ауд. 116 (21)</div>
+                        <div class="room" data-room="Ауд. 117" data-capacity="33">Ауд. 117 (33)</div>
+                        <div class="room" data-room="Ауд. 118" data-capacity="27">Ауд. 118 (27)</div>
+                        <div class="room" data-room="Ауд. 119" data-capacity="42">Ауд. 119 (42)</div>
+                        <div class="room" data-room="Ауд. 120" data-capacity="34">Ауд. 120 (34)</div>
+                    </div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 211" data-capacity="29">Ауд. 211 (29)</div>
+                        <div class="room" data-room="Ауд. 212" data-capacity="31">Ауд. 212 (31)</div>
+                        <div class="room" data-room="Ауд. 213" data-capacity="36">Ауд. 213 (36)</div>
+                        <div class="room" data-room="Ауд. 214" data-capacity="24">Ауд. 214 (24)</div>
+                        <div class="room" data-room="Ауд. 215" data-capacity="41">Ауд. 215 (41)</div>
+                        <div class="room" data-room="Ауд. 216" data-capacity="22">Ауд. 216 (22)</div>
+                        <div class="room" data-room="Ауд. 217" data-capacity="34">Ауд. 217 (34)</div>
+                        <div class="room" data-room="Ауд. 218" data-capacity="28">Ауд. 218 (28)</div>
+                        <div class="room" data-room="Ауд. 219" data-capacity="37">Ауд. 219 (37)</div>
+                        <div class="room" data-room="Ауд. 220" data-capacity="30">Ауд. 220 (30)</div>
+                    </div>
+                </div>
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 311" data-capacity="25">Ауд. 311 (25)</div>
+                        <div class="room" data-room="Ауд. 312" data-capacity="33">Ауд. 312 (33)</div>
+                        <div class="room" data-room="Ауд. 313" data-capacity="38">Ауд. 313 (38)</div>
+                        <div class="room" data-room="Ауд. 314" data-capacity="23">Ауд. 314 (23)</div>
+                        <div class="room" data-room="Ауд. 315" data-capacity="35">Ауд. 315 (35)</div>
+                        <div class="room" data-room="Ауд. 316" data-capacity="21">Ауд. 316 (21)</div>
+                        <div class="room" data-room="Ауд. 317" data-capacity="30">Ауд. 317 (30)</div>
+                        <div class="room" data-room="Ауд. 318" data-capacity="29">Ауд. 318 (29)</div>
+                        <div class="room" data-room="Ауд. 319" data-capacity="40">Ауд. 319 (40)</div>
+                        <div class="room" data-room="Ауд. 320" data-capacity="32">Ауд. 320 (32)</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div class="entrance">Вход</div>
 </div>
+
+<!-- Оверлей и выезжающее окно -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-labelledby="drawer-title">
+    <header>
+        <h2 id="drawer-title">Бронирование</h2>
+        <button class="close" id="drawer-close" aria-label="Закрыть">Закрыть</button>
+    </header>
+    <div class="content">
+        <div><strong>Помещение:</strong> <span id="room-name">—</span></div>
+        <div style="margin-top:10px"><strong>Доступные слоты (1.5ч):</strong></div>
+        <div class="slots" id="slots"></div>
+        <p style="margin-top:10px"><small>График: с 08:00 до 20:00; между парами 10 минут, обеденная пауза 12:50–13:20.</small></p>
+    </div>
+</aside>
+
 <script>
-    fetch('/api/v1/users/me',{credentials:'same-origin'})
-      .then(r=>r.ok?r.json():null)
-      .then(me=>{
-        if(!me)return;
-        document.getElementById('me-name').textContent=(me.firstName??'')+' '+(me.lastName??'');
-        document.getElementById('me-login').textContent=me.login??(me.email??'');
-        document.getElementById('me-role').textContent=me.role??(me.admin?'ADMIN':'USER');
-      }).catch(()=>{});
+    const SLOT_PLAN = [
+      ['08:00','09:30'],
+      ['09:40','11:10'],
+      ['11:20','12:50'],
+      ['13:20','14:50'],
+      ['15:00','16:30'],
+      ['16:40','18:10'],
+      ['18:20','19:50'],
+    ];
+
+    const roomBusy = {};
+    let selectedSlotIndex = 0;
+
+    const slotFilter = document.getElementById('slot-filter');
+    SLOT_PLAN.forEach(([s,e], idx) => {
+      const opt = document.createElement('option');
+      opt.value = String(idx);
+      opt.textContent = `${s}–${e}`;
+      slotFilter.appendChild(opt);
+    });
+    slotFilter.value = String(selectedSlotIndex);
+
+    const switchButtons = document.querySelectorAll('.floor-switch button');
+    const floors = document.querySelectorAll('.floor');
+
+    switchButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const floor = btn.dataset.floor;
+        switchButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        floors.forEach(f => {
+          f.classList.toggle('active', f.dataset.floor === floor);
+        });
+      });
+    });
+
+    const overlay = document.getElementById('overlay');
+    const drawer = document.getElementById('drawer');
+    const drawerClose = document.getElementById('drawer-close');
+    const roomNameEl = document.getElementById('room-name');
+    const slotsEl = document.getElementById('slots');
+    let currentRoom = null;
+
+    function openDrawer(roomLabel){
+      currentRoom = roomLabel;
+      roomNameEl.textContent = roomLabel;
+      renderSlotButtons(roomLabel);
+      overlay.classList.add('open');
+      drawer.classList.add('open');
+      drawer.setAttribute('aria-hidden','false');
+    }
+    function closeDrawer(){
+      overlay.classList.remove('open');
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden','true');
+      currentRoom = null;
+    }
+    overlay.addEventListener('click', closeDrawer);
+    drawerClose.addEventListener('click', closeDrawer);
+
+    function renderSlotButtons(roomLabel){
+      const busySet = roomBusy[roomLabel] || new Set();
+      slotsEl.innerHTML = '';
+      SLOT_PLAN.forEach(([s,e], idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'slot';
+        btn.textContent = `${s}–${e} `;
+        const small = document.createElement('small');
+        small.textContent = busySet.has(idx) ? '(занято)' : '(свободно)';
+        btn.appendChild(small);
+        if (busySet.has(idx)) btn.setAttribute('disabled','true');
+        btn.dataset.index = String(idx);
+        slotsEl.appendChild(btn);
+      });
+    }
+
+    slotsEl.addEventListener('click', (e)=>{
+      const btn = e.target.closest('.slot');
+      if(!btn || btn.hasAttribute('disabled') || !currentRoom) return;
+      const idx = Number(btn.dataset.index);
+      if(!roomBusy[currentRoom]) roomBusy[currentRoom] = new Set();
+      roomBusy[currentRoom].add(idx);
+      renderSlotButtons(currentRoom);
+      renderMapForSlot(selectedSlotIndex);
+    });
+
+    const allRooms = Array.from(document.querySelectorAll('.room'));
+    function renderMapForSlot(slotIdx){
+      allRooms.forEach(el => {
+        const name = el.dataset.room || el.textContent.trim();
+        const busySet = roomBusy[name];
+        const isBusy = busySet ? busySet.has(slotIdx) : false;
+        el.classList.toggle('busy', !!isBusy);
+      });
+    }
+
+    slotFilter.addEventListener('change', () => {
+      selectedSlotIndex = Number(slotFilter.value);
+      renderMapForSlot(selectedSlotIndex);
+    });
+
+    allRooms.forEach(r => {
+      if (r.classList.contains("foyer")) return; // фойе нельзя бронировать
+      r.addEventListener('click', () => {
+        const name = r.dataset.room || r.textContent.trim();
+        openDrawer(name);
+      });
+    });
+
+    renderMapForSlot(selectedSlotIndex);
 </script>
 </body>
 </html>

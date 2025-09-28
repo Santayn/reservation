@@ -8,8 +8,10 @@ import org.santayn.reservation.web.dto.user.UpdateRoleRequest;
 import org.santayn.reservation.web.dto.user.UserMeDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.santayn.reservation.web.dto.user.UserDto;
 
 import java.security.Principal;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -27,4 +29,12 @@ public class UsersRestController {
         service.updateRole(id, req);
         return ResponseEntity.ok().build();
     }
+
+
+    @GetMapping
+    public ResponseEntity<List<UserDto>> list() {
+        return ResponseEntity.ok(service.listAll());
+    }
+
+
 }

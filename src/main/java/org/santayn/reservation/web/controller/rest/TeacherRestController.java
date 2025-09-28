@@ -25,4 +25,9 @@ public class TeacherRestController {
     public ResponseEntity<List<TeacherDto>> list() {
         return ResponseEntity.ok(service.list());
     }
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        service.delete(id); // реализуй в GroupService (например, repository.deleteById(id))
+        return ResponseEntity.noContent().build();
+    }
 }

@@ -33,6 +33,9 @@
               row.innerHTML = `
                 <div>#${t.id}</div>
                 <div><b>${t.fullName}</b> (${t.login}) <span class="muted">facultyId=${t.facultyId}</span></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${t.id}" title="Удалить учителя #${t.id}">Удалить</button>
+                </div>
               `;
               box.appendChild(row);
             });
@@ -60,6 +63,39 @@
             await loadTeachers();
           }catch(e){ toastErr(err, e.message); }
         }
+
+        async function deleteTeacher(id){
+          const err = qs('#teacher-error'), ok = qs('#teacher-ok');
+          clearAlerts();
+          try{
+            await jfetch(`/api/teachers/${id}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(ok, `Преподаватель #${id} удалён`);
+            await loadTeachers();
+          }catch(e){
+            toastErr(err, e.message || `Не удалось удалить преподавателя #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('teacher');
+          qs('#btn-create-teacher').addEventListener('click', createTeacher);
+
+          // Делегирование кликов по кнопкам удаления
+          qs('#teachers-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if(!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить преподавателя #${id}? Это действие необратимо.`)){
+              deleteTeacher(id);
+            }
+          });
+
+          loadTeachers();
+        });
 
         window.addEventListener('DOMContentLoaded', async ()=>{
           await injectSidebar('teachers');
@@ -104,6 +140,7 @@
     <section class="card">
         <h2>Список преподавателей</h2>
         <div id="teachers-list"></div>
+        <div class="hint">DELETE <code>/api/teachers/{id}</code> — удаление группы</div>
     </section>
 </main>
 </body>

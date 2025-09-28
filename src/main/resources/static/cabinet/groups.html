@@ -12,17 +12,25 @@
           box.innerHTML = '';
           try{
             const list = await jfetch('/api/groups', { credentials:'same-origin' });
-            if (!list.length){ box.innerHTML = '<div class="muted">Пока нет групп</div>'; return; }
+            if (!list.length){
+              box.innerHTML = '<div class="muted">Пока нет групп</div>';
+              return;
+            }
             list.forEach(g=>{
               const row = document.createElement('div');
               row.className = 'kv';
               row.innerHTML = `
                 <div>#${g.id}</div>
-                <div><b>${g.name}</b> ${g.title?(' — '+g.title):''} ${g.courseCode!=null?` <span class="muted">(course ${g.courseCode})</span>`:''}</div>
+                <div><b>${g.name}</b>${g.title?(' — '+g.title):''}${g.courseCode!=null?` <span class="muted">(course ${g.courseCode})</span>`:''}</div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${g.id}" title="Удалить группу #${g.id}">Удалить</button>
+                </div>
               `;
               box.appendChild(row);
             });
-          }catch{ box.innerHTML = '<div class="muted">Ошибка загрузки списка</div>'; }
+          }catch{
+            box.innerHTML = '<div class="muted">Ошибка загрузки списка</div>';
+          }
         }
 
         async function createGroup(){
@@ -41,14 +49,45 @@
               body: JSON.stringify({ name, title: title || null, courseCode })
             });
             toastOK(ok, `Группа создана (id=${dto.id})`);
-            qs('#g-name').value = ''; qs('#g-title').value=''; qs('#g-course').value='';
+            qs('#g-name').value = '';
+            qs('#g-title').value = '';
+            qs('#g-course').value = '';
             await loadGroups();
-          }catch(e){ toastErr(err, e.message); }
+          }catch(e){
+            toastErr(err, e.message);
+          }
+        }
+
+        async function deleteGroup(id){
+          const err = qs('#groups-error'), ok = qs('#groups-ok');
+          clearAlerts();
+          try{
+            await jfetch(`/api/groups/${id}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(ok, `Группа #${id} удалена`);
+            await loadGroups();
+          }catch(e){
+            toastErr(err, e.message || `Не удалось удалить группу #${id}`);
+          }
         }
 
         window.addEventListener('DOMContentLoaded', async ()=>{
           await injectSidebar('groups');
           qs('#btn-create-group').addEventListener('click', createGroup);
+
+          // Делегирование кликов по кнопкам удаления
+          qs('#groups-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if(!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить группу #${id}? Это действие необратимо.`)){
+              deleteGroup(id);
+            }
+          });
+
           loadGroups();
         });
     </script>
@@ -82,7 +121,10 @@
 
     <section class="card">
         <h2>Список групп</h2>
+        <div id="groups-error" class="alert error hidden"></div>
+        <div id="groups-ok" class="alert ok hidden"></div>
         <div id="groups-list"></div>
+        <div class="hint">DELETE <code>/api/groups/{id}</code> — удаление группы</div>
     </section>
 </main>
 </body>

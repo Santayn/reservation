@@ -4,15 +4,59 @@
     <meta charset="UTF-8"/>
     <title>Назначить роль — кабинет</title>
     <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <style>
+        .row-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 900px){ .row-inline { grid-template-columns: 1fr; } }
+    </style>
     <script type="module">
         import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        // Нормализация под твой UserDto(id, fullName, email, role)
+        function normalizeUser(u){
+          return {
+            id: Number(u.id),
+            name: u.fullName || ('user-'+u.id),
+            email: u.email || null,
+            role: u.role || 'USER'
+          };
+        }
+
+        async function fetchUsers(){
+          // без пагинации: UsersRestController @GetMapping("/api/v1/users")
+          const data = await jfetch('/api/v1/users', { credentials:'same-origin' });
+          if (!Array.isArray(data)) return [];
+          return data.map(normalizeUser).filter(u => Number.isFinite(u.id));
+        }
+
+        async function loadUsersIntoSelect(){
+          const err = qs('#role-error');
+          const sel = qs('#r-user');
+          sel.innerHTML = '<option value="">— загружаю пользователей… —</option>';
+          try{
+            const users = await fetchUsers();
+            sel.innerHTML = '<option value="">— выберите пользователя —</option>';
+            users.forEach(u=>{
+              const opt = document.createElement('option');
+              opt.value = String(u.id);
+              const roleBadge = u.role ? ` [${u.role}]` : '';
+              opt.textContent = `#${u.id} — ${u.name}${u.email ? ' ('+u.email+')' : ''}${roleBadge}`;
+              sel.appendChild(opt);
+            });
+            if (users.length === 0){
+              toastErr(err, 'Список пользователей пуст.');
+            }
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось загрузить список пользователей');
+            sel.innerHTML = '<option value="">— не удалось загрузить —</option>';
+          }
+        }
 
         async function assignRole(){
           clearAlerts();
           const err = qs('#role-error'), ok = qs('#role-ok');
-          const uid = Number(qs('#r-user-id').value);
+          const uid = Number(qs('#r-user').value);
           const role = qs('#r-role').value;
-          if (!uid || uid < 1) return toastErr(err, 'Укажите корректный ID пользователя');
+          if (!uid || uid < 1) return toastErr(err, 'Выберите пользователя из списка');
           try{
             await jfetch(`/api/v1/users/${uid}/role`, {
               credentials:'same-origin',
@@ -20,12 +64,17 @@
               body: JSON.stringify({ role })
             });
             toastOK(ok, 'Роль обновлена');
-            qs('#r-user-id').value = '';
-          }catch(e){ toastErr(err, e.message); }
+            qs('#r-user').value = '';
+            // Перезагрузим список, чтобы обновить бейдж роли
+            await loadUsersIntoSelect();
+          }catch(e){
+            toastErr(err, e.message || 'Не удалось назначить роль');
+          }
         }
 
         window.addEventListener('DOMContentLoaded', async ()=>{
           await injectSidebar('roles');
+          await loadUsersIntoSelect();
           qs('#btn-assign-role').addEventListener('click', assignRole);
         });
     </script>
@@ -37,10 +86,13 @@
         <h2>Назначить роль</h2>
         <div id="role-error" class="alert error hidden"></div>
         <div id="role-ok" class="alert ok hidden"></div>
-        <div class="row">
+
+        <div class="row row-inline">
             <div>
-                <label>ID пользователя*</label>
-                <input id="r-user-id" type="number" min="1" placeholder="например, 1"/>
+                <label>Пользователь*</label>
+                <select id="r-user">
+                    <option value="">— загружаю пользователей… —</option>
+                </select>
             </div>
             <div>
                 <label>Роль*</label>
@@ -50,8 +102,12 @@
                 </select>
             </div>
         </div>
-        <button id="btn-assign-role" class="btn primary">Сохранить</button>
-        <div class="hint">PUT <code>/api/v1/users/{id}/role</code> → { role }</div>
+
+        <button id="btn-assign-role" class="btn primary" style="margin-top:12px">Сохранить</button>
+        <div class="hint">
+            GET <code>/api/v1/users</code> → список всех пользователей<br>
+            PUT <code>/api/v1/users/{id}/role</code> → <code>{ role }</code>
+        </div>
     </section>
 </main>
 </body>

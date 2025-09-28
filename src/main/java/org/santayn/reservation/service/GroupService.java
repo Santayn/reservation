@@ -9,8 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
-@Service @RequiredArgsConstructor
+@Service
+@RequiredArgsConstructor
 public class GroupService {
     private final GroupRepository repo;
 
@@ -25,9 +27,22 @@ public class GroupService {
         return new GroupDto(g.getId(), g.getName(), g.getTitle(), g.getCourseCode());
     }
 
+    @Transactional(readOnly = true)
     public List<GroupDto> list() {
         return repo.findAll().stream()
                 .map(g -> new GroupDto(g.getId(), g.getName(), g.getTitle(), g.getCourseCode()))
                 .toList();
     }
+
+    // 🔥 Новый метод — удаление группы
+    // org/santayn/reservation/service/GroupService.java
+    @Transactional
+    public void delete(Long id) {
+        Integer intId = Math.toIntExact(id); // безопасно, если id помещается в int
+        if (!repo.existsById(intId)) {
+            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        }
+        repo.deleteById(intId);
+    }
+
 }
