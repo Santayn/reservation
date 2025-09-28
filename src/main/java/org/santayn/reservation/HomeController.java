@@ -7,8 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
 public class HomeController {
-    @GetMapping({"/", "/cabinet"})
+    @GetMapping({"/"})
     public String cabinet() {
-        return "redirect:/cabinet/index.html";
+        return "redirect:/login.html";
     }
 }
