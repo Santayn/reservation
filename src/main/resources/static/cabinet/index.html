@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Личный кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar} from '/cabinet/js/api.js';
+        window.addEventListener('DOMContentLoaded', ()=> injectSidebar('index'));
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h1>Добро пожаловать!</h1>
+        <p class="muted">Выберите раздел слева. Рекомендуем начать с «О себе».</p>
+    </section>
+</main>
+</body>
+</html>

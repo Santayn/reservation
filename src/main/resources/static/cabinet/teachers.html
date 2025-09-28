@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Создать преподавателя — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, show, hide, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        async function preloadFaculties(){
+          const sel = qs('#t-faculty');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            const list = await jfetch('/api/faculties', { credentials:'same-origin' });
+            sel.innerHTML = list.length ? '' : '<option value="">— нет факультетов —</option>';
+            list.forEach(f=>{
+              const opt = document.createElement('option');
+              opt.value = f.id; opt.textContent = f.name;
+              sel.appendChild(opt);
+            });
+          }catch{ sel.innerHTML = '<option value="">Ошибка загрузки</option>'; }
+        }
+
+        async function loadTeachers(){
+          const box = qs('#teachers-list');
+          box.innerHTML = '';
+          try{
+            const list = await jfetch('/api/teachers', { credentials:'same-origin' });
+            if (!list.length){ box.innerHTML = '<div class="muted">Пока нет преподавателей</div>'; return; }
+            list.forEach(t=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${t.id}</div>
+                <div><b>${t.fullName}</b> (${t.login}) <span class="muted">facultyId=${t.facultyId}</span></div>
+              `;
+              box.appendChild(row);
+            });
+          }catch{ box.innerHTML = '<div class="muted">Ошибка загрузки списка</div>'; }
+        }
+
+        async function createTeacher(){
+          clearAlerts();
+          const err = qs('#teacher-error'), ok = qs('#teacher-ok');
+          const fullName = qs('#t-full').value.trim();
+          const login = qs('#t-login').value.trim();
+          const passwordHash = qs('#t-pass').value.trim();
+          const facultyId = qs('#t-faculty').value;
+          if (!fullName || !login || !passwordHash || !facultyId){
+            return toastErr(err, 'Заполните обязательные поля');
+          }
+          try{
+            const dto = await jfetch('/api/teachers', {
+              credentials:'same-origin',
+              method:'POST',
+              body: JSON.stringify({ fullName, login, passwordHash, facultyId: Number(facultyId) })
+            });
+            toastOK(ok, `Преподаватель создан (id=${dto.id})`);
+            qs('#t-full').value=''; qs('#t-login').value=''; qs('#t-pass').value='';
+            await loadTeachers();
+          }catch(e){ toastErr(err, e.message); }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('teachers');
+          await preloadFaculties();
+          await loadTeachers();
+          qs('#btn-create-teacher').addEventListener('click', createTeacher);
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Создать преподавателя</h2>
+        <div id="teacher-error" class="alert error hidden"></div>
+        <div id="teacher-ok" class="alert ok hidden"></div>
+        <div class="row">
+            <div>
+                <label>ФИО*</label>
+                <input id="t-full" placeholder="Иванов Иван Иванович"/>
+            </div>
+            <div>
+                <label>Логин*</label>
+                <input id="t-login" placeholder="ivanov.i"/>
+            </div>
+        </div>
+        <div class="row">
+            <div>
+                <label>Пароль (hash)*</label>
+                <input id="t-pass" placeholder="$2a$... или иной hash"/>
+            </div>
+            <div>
+                <label>Факультет*</label>
+                <select id="t-faculty"></select>
+                <div class="hint">Источник: <code>GET /api/faculties</code></div>
+            </div>
+        </div>
+        <button id="btn-create-teacher" class="btn primary">Создать</button>
+        <div class="hint">POST <code>/api/teachers</code> → { fullName, login, passwordHash, facultyId }</div>
+    </section>
+
+    <section class="card">
+        <h2>Список преподавателей</h2>
+        <div id="teachers-list"></div>
+    </section>
+</main>
+</body>
+</html>

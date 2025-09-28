@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Назначить роль — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        async function assignRole(){
+          clearAlerts();
+          const err = qs('#role-error'), ok = qs('#role-ok');
+          const uid = Number(qs('#r-user-id').value);
+          const role = qs('#r-role').value;
+          if (!uid || uid < 1) return toastErr(err, 'Укажите корректный ID пользователя');
+          try{
+            await jfetch(`/api/v1/users/${uid}/role`, {
+              credentials:'same-origin',
+              method:'PUT',
+              body: JSON.stringify({ role })
+            });
+            toastOK(ok, 'Роль обновлена');
+            qs('#r-user-id').value = '';
+          }catch(e){ toastErr(err, e.message); }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('roles');
+          qs('#btn-assign-role').addEventListener('click', assignRole);
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Назначить роль</h2>
+        <div id="role-error" class="alert error hidden"></div>
+        <div id="role-ok" class="alert ok hidden"></div>
+        <div class="row">
+            <div>
+                <label>ID пользователя*</label>
+                <input id="r-user-id" type="number" min="1" placeholder="например, 1"/>
+            </div>
+            <div>
+                <label>Роль*</label>
+                <select id="r-role">
+                    <option value="USER">USER</option>
+                    <option value="ADMIN">ADMIN</option>
+                </select>
+            </div>
+        </div>
+        <button id="btn-assign-role" class="btn primary">Сохранить</button>
+        <div class="hint">PUT <code>/api/v1/users/{id}/role</code> → { role }</div>
+    </section>
+</main>
+</body>
+</html>

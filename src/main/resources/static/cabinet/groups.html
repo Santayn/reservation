@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Создать группу — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, qsa, show, hide, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        async function loadGroups(){
+          const box = qs('#groups-list');
+          box.innerHTML = '';
+          try{
+            const list = await jfetch('/api/groups', { credentials:'same-origin' });
+            if (!list.length){ box.innerHTML = '<div class="muted">Пока нет групп</div>'; return; }
+            list.forEach(g=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${g.id}</div>
+                <div><b>${g.name}</b> ${g.title?(' — '+g.title):''} ${g.courseCode!=null?` <span class="muted">(course ${g.courseCode})</span>`:''}</div>
+              `;
+              box.appendChild(row);
+            });
+          }catch{ box.innerHTML = '<div class="muted">Ошибка загрузки списка</div>'; }
+        }
+
+        async function createGroup(){
+          clearAlerts();
+          const err = qs('#group-error'), ok = qs('#group-ok');
+          const name = qs('#g-name').value.trim();
+          const title = qs('#g-title').value.trim();
+          const courseVal = qs('#g-course').value;
+          const courseCode = courseVal ? Number(courseVal) : null;
+          if (!name) return toastErr(err, 'Укажите имя группы');
+
+          try{
+            const dto = await jfetch('/api/groups', {
+              credentials:'same-origin',
+              method:'POST',
+              body: JSON.stringify({ name, title: title || null, courseCode })
+            });
+            toastOK(ok, `Группа создана (id=${dto.id})`);
+            qs('#g-name').value = ''; qs('#g-title').value=''; qs('#g-course').value='';
+            await loadGroups();
+          }catch(e){ toastErr(err, e.message); }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('groups');
+          qs('#btn-create-group').addEventListener('click', createGroup);
+          loadGroups();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Создать группу</h2>
+        <div id="group-error" class="alert error hidden"></div>
+        <div id="group-ok" class="alert ok hidden"></div>
+        <div class="row">
+            <div>
+                <label>Код/имя группы*</label>
+                <input id="g-name" placeholder="например, CS-101"/>
+            </div>
+            <div>
+                <label>Заголовок (опционально)</label>
+                <input id="g-title" placeholder="Поток 2025-1"/>
+            </div>
+        </div>
+        <div class="row">
+            <div>
+                <label>Course code (опционально)</label>
+                <input id="g-course" type="number" inputmode="numeric" placeholder="например, 1"/>
+            </div>
+        </div>
+        <button id="btn-create-group" class="btn primary">Создать</button>
+        <div class="hint">POST <code>/api/groups</code> → { name, title, courseCode }</div>
+    </section>
+
+    <section class="card">
+        <h2>Список групп</h2>
+        <div id="groups-list"></div>
+    </section>
+</main>
+</body>
+</html>

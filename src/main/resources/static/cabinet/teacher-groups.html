@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Назначить группы преподавателю — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        async function preloadTeachers(){
+          const sel = qs('#tg-teacher');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            const list = await jfetch('/api/teachers', { credentials:'same-origin' });
+            sel.innerHTML = list.length ? '' : '<option value="">— нет преподавателей —</option>';
+            list.forEach(t=>{
+              const opt = document.createElement('option');
+              opt.value = t.id; opt.textContent = `${t.fullName} (${t.login})`;
+              sel.appendChild(opt);
+            });
+          }catch{ sel.innerHTML = '<option value="">Ошибка загрузки</option>'; }
+        }
+
+        async function preloadGroups(){
+          const sel = qs('#tg-group');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            const list = await jfetch('/api/groups', { credentials:'same-origin' });
+            sel.innerHTML = list.length ? '' : '<option value="">— нет групп —</option>';
+            list.forEach(g=>{
+              const opt = document.createElement('option');
+              opt.value = g.id; opt.textContent = `${g.name}` + (g.title?` — ${g.title}`:'');
+              sel.appendChild(opt);
+            });
+          }catch{ sel.innerHTML = '<option value="">Ошибка загрузки</option>'; }
+        }
+
+        async function mapTeacherGroup(){
+          clearAlerts();
+          const err = qs('#tg-error'), ok = qs('#tg-ok');
+          const teacherId = Number(qs('#tg-teacher').value);
+          const groupId = Number(qs('#tg-group').value);
+          if (!teacherId || !groupId) return toastErr(err, 'Выберите преподавателя и группу');
+          try{
+            await jfetch('/api/teacher-groups', {
+              credentials:'same-origin',
+              method:'POST',
+              body: JSON.stringify({ teacherId, groupId })
+            });
+            toastOK(ok, 'Группа назначена преподавателю');
+          }catch(e){ toastErr(err, e.message); }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('teacher-groups');
+          await preloadTeachers();
+          await preloadGroups();
+          qs('#btn-map-tg').addEventListener('click', mapTeacherGroup);
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Назначить группы преподавателю</h2>
+        <div id="tg-error" class="alert error hidden"></div>
+        <div id="tg-ok" class="alert ok hidden"></div>
+        <div class="row">
+            <div>
+                <label>Преподаватель*</label>
+                <select id="tg-teacher"></select>
+                <div class="hint">Источник: <code>GET /api/teachers</code></div>
+            </div>
+            <div>
+                <label>Группа*</label>
+                <select id="tg-group"></select>
+                <div class="hint">Источник: <code>GET /api/groups</code></div>
+            </div>
+        </div>
+        <button id="btn-map-tg" class="btn primary">Назначить</button>
+        <div class="hint">POST <code>/api/teacher-groups</code> → { teacherId, groupId }</div>
+    </section>
+</main>
+</body>
+</html>
