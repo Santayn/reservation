@@ -4,6 +4,6 @@ package org.santayn.reservation.web.dto.user;
 public record UserDto(
         Long id,
         String fullName,
-        String email,
+        String login,
         String role
 ) {}

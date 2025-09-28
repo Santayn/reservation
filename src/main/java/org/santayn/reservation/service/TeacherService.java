@@ -2,10 +2,11 @@
 package org.santayn.reservation.service;
 
 import lombok.RequiredArgsConstructor;
-import org.santayn.reservation.models.teacher.Teacher;
+import org.santayn.reservation.models.user.User;
 import org.santayn.reservation.repositories.FacultyRepository;
-import org.santayn.reservation.repositories.TeacherRepository;
-import org.santayn.reservation.web.dto.teacher.*;
+import org.santayn.reservation.repositories.UserRepository;
+import org.santayn.reservation.web.dto.teacher.TeacherCreateRequest;
+import org.santayn.reservation.web.dto.teacher.TeacherDto;
 import org.santayn.reservation.web.exception.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,37 +14,48 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-@Service @RequiredArgsConstructor
+@Service
+@RequiredArgsConstructor
 public class TeacherService {
-    private final TeacherRepository repo;
+
+    private final UserRepository userRepo;
     private final FacultyRepository facultyRepo;
 
     @Transactional
     public TeacherDto create(TeacherCreateRequest r) {
         var faculty = facultyRepo.findById(r.facultyId())
                 .orElseThrow(() -> new NotFoundException("Faculty not found: " + r.facultyId()));
-        var t = Teacher.builder()
+
+        var u = User.builder()
                 .fullName(r.fullName())
                 .login(r.login())
                 .passwordHash(r.passwordHash())
+                .admin(false) // преподаватель не админ
                 .faculty(faculty)
                 .build();
-        t = repo.save(t);
-        return new TeacherDto(t.getId(), t.getFullName(), t.getLogin(), faculty.getId());
+
+        u = userRepo.save(u);
+        return new TeacherDto(u.getId(), u.getFullName(), u.getLogin(), faculty.getId());
     }
 
+    @Transactional(readOnly = true)
     public List<TeacherDto> list() {
-        return repo.findAll().stream()
-                .map(t -> new TeacherDto(t.getId(), t.getFullName(), t.getLogin(), t.getFaculty().getId()))
+        return userRepo.findAll().stream()
+                .filter(u -> !u.isAdmin())
+                .map(u -> new TeacherDto(
+                        u.getId(),
+                        u.getFullName(),
+                        u.getLogin(),
+                        u.getFaculty() != null ? u.getFaculty().getId() : null
+                ))
                 .toList();
     }
 
     @Transactional
     public void delete(Long id) {
-         // безопасно, если id помещается в int
-        if (!repo.existsById(id)) {
-            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        if (!userRepo.existsById(id)) {
+            throw new NoSuchElementException("User with id=" + id + " not found");
         }
-        repo.deleteById(id);
+        userRepo.deleteById(id);
     }
 }

@@ -17,16 +17,16 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class UserService {
+
     private final UserRepository userRepository;
 
-    // Текущий пользователь
+    /** Текущий пользователь по login из Principal */
     public UserMeDto me(Principal principal) {
-        if (principal == null) {
-            throw new NotFoundException("Unauthorized");
-        }
-        String email = principal.getName(); // по умолчанию Spring Security кладёт логин сюда
-        User u = userRepository.findByEmail(email)
-                .orElseThrow(() -> new NotFoundException("User not found: " + email));
+        if (principal == null) throw new NotFoundException("Unauthorized");
+
+        String login = principal.getName(); // Spring Security кладёт сюда username/login
+        User u = userRepository.findByLogin(login)
+                .orElseThrow(() -> new NotFoundException("User not found: " + login));
 
         String firstName = null, lastName = null;
         if (u.getFullName() != null && !u.getFullName().isBlank()) {
@@ -36,20 +36,20 @@ public class UserService {
         }
         String role = u.isAdmin() ? "ADMIN" : "USER";
 
-        return new UserMeDto(u.getId(), firstName, lastName, u.getEmail(), null, role);
+        // login вместо email
+        return new UserMeDto(u.getId(), firstName, lastName, u.getLogin(), null, role);
     }
 
-    // Обновить роль пользователя
+    /** Обновление роли пользователя */
     @Transactional
     public void updateRole(Long userId, UpdateRoleRequest req) {
         var u = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("User not found: " + userId));
-        boolean admin = "ADMIN".equalsIgnoreCase(req.role());
-        u.setAdmin(admin);
+        u.setAdmin("ADMIN".equalsIgnoreCase(req.role()));
         userRepository.save(u);
     }
 
-    // Список всех пользователей для выпадающего списка
+    /** Список всех пользователей для выпадающего списка */
     @Transactional(readOnly = true)
     public List<UserDto> listAll() {
         return userRepository.findAll().stream()
@@ -59,10 +59,11 @@ public class UserService {
 
     private UserDto toDto(User u) {
         String role = u.isAdmin() ? "ADMIN" : "USER";
+        // login вместо email
         return new UserDto(
                 u.getId(),
                 u.getFullName(),
-                u.getEmail(),
+                u.getLogin(),
                 role
         );
     }

@@ -1,16 +1,14 @@
-package org.santayn.reservation.models.teacher;
+// org/santayn/reservation/models/user/Teacher_Group.java
+package org.santayn.reservation.models.user;
 
 import jakarta.persistence.*;
 import lombok.*;
 
-
 @Entity
-@Table(
-        name = "teacher_group",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "ux_teacher_group", columnNames = {"teacher_id", "group_id"})
-        }
-)
+@Table(name = "teacher_group",
+        uniqueConstraints = @UniqueConstraint(
+                name = "ux_teacher_group",
+                columnNames = {"teacher_id", "group_id"}))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,11 +19,11 @@ public class Teacher_Group {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // ссылка на преподавателя
+    // User.id (Long)
     @Column(name = "teacher_id", nullable = false)
     private Long teacherId;
 
-    // ссылка на группу
+    // Group.id (Integer)
     @Column(name = "group_id", nullable = false)
     private Integer groupId;
 }

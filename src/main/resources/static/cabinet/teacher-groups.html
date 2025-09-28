@@ -15,10 +15,13 @@
             sel.innerHTML = list.length ? '' : '<option value="">— нет преподавателей —</option>';
             list.forEach(t=>{
               const opt = document.createElement('option');
-              opt.value = t.id; opt.textContent = `${t.fullName} (${t.login})`;
+              opt.value = t.id;
+              opt.textContent = `${t.fullName} (${t.login})`;
               sel.appendChild(opt);
             });
-          }catch{ sel.innerHTML = '<option value="">Ошибка загрузки</option>'; }
+          }catch{
+            sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+          }
         }
 
         async function preloadGroups(){
@@ -29,10 +32,45 @@
             sel.innerHTML = list.length ? '' : '<option value="">— нет групп —</option>';
             list.forEach(g=>{
               const opt = document.createElement('option');
-              opt.value = g.id; opt.textContent = `${g.name}` + (g.title?` — ${g.title}`:'');
+              opt.value = g.id;
+              opt.textContent = `${g.name}` + (g.title ? ` — ${g.title}` : '');
               sel.appendChild(opt);
             });
-          }catch{ sel.innerHTML = '<option value="">Ошибка загрузки</option>'; }
+          }catch{
+            sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+          }
+        }
+
+        async function loadTeacherLinks(){
+          const box = qs('#links-list');
+          const teacherId = Number(qs('#tg-teacher').value);
+          box.innerHTML = '';
+          if (!teacherId){
+            box.innerHTML = '<div class="muted">Выберите преподавателя, чтобы увидеть его группы</div>';
+            return;
+          }
+          try{
+            const groups = await jfetch(`/api/teacher-groups/${teacherId}`, { credentials:'same-origin' });
+            if (!groups.length){
+              box.innerHTML = '<div class="muted">У преподавателя нет назначенных групп</div>';
+              return;
+            }
+            groups.forEach(g=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${g.id}</div>
+                <div><b>${g.name}</b>${g.title ? ' — ' + g.title : ''}</div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del-g="${g.id}" title="Удалить связь">Убрать</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            box.innerHTML = '<div class="muted">Ошибка загрузки связей</div>';
+            const err = qs('#tg-error'); toastErr(err, e.message || 'Не удалось получить список групп преподавателя');
+          }
         }
 
         async function mapTeacherGroup(){
@@ -48,24 +86,62 @@
               body: JSON.stringify({ teacherId, groupId })
             });
             toastOK(ok, 'Группа назначена преподавателю');
-          }catch(e){ toastErr(err, e.message); }
+            await loadTeacherLinks();
+          }catch(e){
+            toastErr(err, e.message || 'Не удалось назначить группу');
+          }
+        }
+
+        async function deleteLink(groupId){
+          clearAlerts();
+          const err = qs('#tg-error'), ok = qs('#tg-ok');
+          const teacherId = Number(qs('#tg-teacher').value);
+          try{
+            await jfetch(`/api/teacher-groups?teacherId=${teacherId}&groupId=${groupId}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(ok, 'Связь удалена');
+            await loadTeacherLinks();
+          }catch(e){
+            toastErr(err, e.message || 'Не удалось удалить связь');
+          }
         }
 
         window.addEventListener('DOMContentLoaded', async ()=>{
           await injectSidebar('teacher-groups');
           await preloadTeachers();
           await preloadGroups();
+
+          // Назначить
           qs('#btn-map-tg').addEventListener('click', mapTeacherGroup);
+
+          // При смене преподавателя — обновляем список его групп
+          qs('#tg-teacher').addEventListener('change', loadTeacherLinks);
+
+          // Делегирование удаления
+          qs('#links-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del-g]');
+            if (!btn) return;
+            const gid = Number(btn.dataset.delG);
+            if (!Number.isFinite(gid)) return;
+            if (confirm('Убрать эту группу у преподавателя?')) deleteLink(gid);
+          });
+
+          // первичная отрисовка (если вдруг селект уже выбран)
+          loadTeacherLinks();
         });
     </script>
 </head>
 <body>
 <aside class="sidebar" id="sidebar"></aside>
 <main class="content">
+
     <section class="card">
         <h2>Назначить группы преподавателю</h2>
         <div id="tg-error" class="alert error hidden"></div>
         <div id="tg-ok" class="alert ok hidden"></div>
+
         <div class="row">
             <div>
                 <label>Преподаватель*</label>
@@ -78,9 +154,20 @@
                 <div class="hint">Источник: <code>GET /api/groups</code></div>
             </div>
         </div>
+
         <button id="btn-map-tg" class="btn primary">Назначить</button>
         <div class="hint">POST <code>/api/teacher-groups</code> → { teacherId, groupId }</div>
     </section>
+
+    <section class="card">
+        <h3>Группы выбранного преподавателя</h3>
+        <div id="links-list"></div>
+        <div class="hint">
+            GET <code>/api/teacher-groups/{teacherId}</code> — список групп преподавателя<br>
+            DELETE <code>/api/teacher-groups?teacherId=&groupId=</code> — удалить связь
+        </div>
+    </section>
+
 </main>
 </body>
 </html>

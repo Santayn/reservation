@@ -6,6 +6,6 @@ public record UserMeDto(
         String firstName,
         String lastName,
         String login,
-        String phoneNumber,
+        String email, // оставим на будущее, можно будет убрать
         String role
 ) {}

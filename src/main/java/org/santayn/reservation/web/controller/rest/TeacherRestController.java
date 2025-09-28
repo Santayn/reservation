@@ -4,7 +4,8 @@ package org.santayn.reservation.web.controller.rest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.santayn.reservation.service.TeacherService;
-import org.santayn.reservation.web.dto.teacher.*;
+import org.santayn.reservation.web.dto.teacher.TeacherCreateRequest;
+import org.santayn.reservation.web.dto.teacher.TeacherDto;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +15,7 @@ import java.util.List;
 @RequestMapping("/api/teachers")
 @RequiredArgsConstructor
 public class TeacherRestController {
+
     private final TeacherService service;
 
     @PostMapping
@@ -25,9 +27,10 @@ public class TeacherRestController {
     public ResponseEntity<List<TeacherDto>> list() {
         return ResponseEntity.ok(service.list());
     }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        service.delete(id); // реализуй в GroupService (например, repository.deleteById(id))
+        service.delete(id);
         return ResponseEntity.noContent().build();
     }
 }

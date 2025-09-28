@@ -3,45 +3,49 @@ package org.santayn.reservation.bootstrap;
 
 import lombok.RequiredArgsConstructor;
 import org.santayn.reservation.models.faculty.Faculty;
-import org.santayn.reservation.models.teacher.Teacher;
 import org.santayn.reservation.models.user.User;
 import org.santayn.reservation.repositories.FacultyRepository;
-import org.santayn.reservation.repositories.TeacherRepository;
 import org.santayn.reservation.repositories.UserRepository;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements ApplicationRunner {
+
     private final UserRepository userRepo;
-    private final TeacherRepository teacherRepo;
     private final FacultyRepository facultyRepo;
     private final PasswordEncoder encoder;
 
     @Override
+    @Transactional
     public void run(ApplicationArguments args) {
-        userRepo.findByEmail("admin@local").orElseGet(() ->
+        // 1) Базовый факультет
+        Faculty base = facultyRepo.findByName("Базовый")
+                .orElseGet(() -> facultyRepo.save(Faculty.builder().name("Базовый").build()));
+
+        // 2) Админ (login=admin)
+        userRepo.findByLogin("admin").orElseGet(() ->
                 userRepo.save(User.builder()
-                        .email("admin@local")
+                        .login("admin")
                         .fullName("Администратор")
                         .passwordHash(encoder.encode("admin123"))
                         .admin(true)
+                        .faculty(base)                // ВАЖНО: задать факультет
                         .build())
         );
 
-        var fac = facultyRepo.findByName("Базовый")
-                .orElseGet(() -> facultyRepo.save(Faculty.builder().name("Базовый").build()));
-
-        teacherRepo.findByLogin("teacher").orElseGet(() ->
-                teacherRepo.save(Teacher.builder()
-                        .fullName("Иванов Иван")
+        // 3) Пример преподавателя (не админ)
+        userRepo.findByLogin("teacher").orElseGet(() ->
+                userRepo.save(User.builder()
                         .login("teacher")
+                        .fullName("Иванов Иван")
                         .passwordHash(encoder.encode("teacher123"))
-                        .faculty(fac)
+                        .admin(false)
+                        .faculty(base)
                         .build())
         );
     }
