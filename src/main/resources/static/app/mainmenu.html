@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Main Menu</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+</head>
+<body>
+<div class="screen">
+    <section class="card" style="max-width:640px;width:100%">
+        <h1 style="margin:0 0 6px;">Добро пожаловать!</h1>
+        <div class="muted">Вы вошли в систему. Ниже — быстрые действия.</div>
+
+        <div id="me" style="margin-top:14px;">
+            <div class="kv"><div class="muted">Имя:</div><div id="me-name">—</div></div>
+            <div class="kv"><div class="muted">Логин:</div><div id="me-login">—</div></div>
+            <div class="kv"><div class="muted">Роль:</div><div id="me-role">—</div></div>
+        </div>
+
+        <div class="actions">
+            <a class="btn primary" href="/cabinet/index.html">Перейти в личный кабинет</a>
+            <a class="btn" href="/logout">Выйти</a>
+        </div>
+
+        <div class="muted" style="margin-top:10px;">REST: <code>/api/v1/users/me</code></div>
+    </section>
+</div>
+<script>
+    fetch('/api/v1/users/me',{credentials:'same-origin'})
+      .then(r=>r.ok?r.json():null)
+      .then(me=>{
+        if(!me)return;
+        document.getElementById('me-name').textContent=(me.firstName??'')+' '+(me.lastName??'');
+        document.getElementById('me-login').textContent=me.login??(me.email??'');
+        document.getElementById('me-role').textContent=me.role??(me.admin?'ADMIN':'USER');
+      }).catch(()=>{});
+</script>
+</body>
+</html>

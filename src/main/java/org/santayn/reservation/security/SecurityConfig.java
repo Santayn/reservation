@@ -17,45 +17,33 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Если нужно включить CSRF — скажи, добавим CookieCsrfTokenRepository и хедер в fetch.
                 .csrf(csrf -> csrf.disable())
-
                 .authorizeHttpRequests(auth -> auth
-                        // статические ассеты и страница логина — без авторизации
+                        // логин и статика доступны всем
                         .requestMatchers(
                                 "/login.html",
                                 "/cabinet/css/**",
                                 "/cabinet/js/**",
+                                "/cabinet/img/**",
                                 "/favicon.ico",
                                 "/error"
                         ).permitAll()
-
-                        // API и страницы кабинета — только после логина
-                        .requestMatchers("/cabinet/**").authenticated()
-                        .requestMatchers("/api/**").authenticated()
-
-                        // всё остальное можно открыть/закрыть по желанию
-                        .requestMatchers(HttpMethod.GET, "/").permitAll()
-                        .anyRequest().permitAll()
+                        // всё остальное — только после авторизации
+                        .anyRequest().authenticated()
                 )
-
                 .formLogin(form -> form
-                        .loginPage("/cabinet/login.html")     // своя форма
-                        .loginProcessingUrl("/login")          // action формы
-                        .defaultSuccessUrl("/cabinet/index.html", true)
-                        .failureUrl("/cabinet/login.html?error")
+                        .loginPage("/login.html")
+                        .loginProcessingUrl("/login")
+                        .defaultSuccessUrl("/app/mainmenu.html", true) // всегда в главное меню
+                        .failureUrl("/login.html?error")
                         .permitAll()
                 )
-
                 .logout(logout -> logout
                         .logoutUrl("/logout")
-                        .logoutSuccessUrl("/cabinet/login.html?logout")
+                        .logoutSuccessUrl("/login.html?logout")
                         .deleteCookies("JSESSIONID")
                         .permitAll()
-                )
-
-                // опционально: удобно для теста REST через Postman
-                .httpBasic(Customizer.withDefaults());
+                );
 
         return http.build();
     }
