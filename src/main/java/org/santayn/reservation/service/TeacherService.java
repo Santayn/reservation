@@ -8,6 +8,7 @@ import org.santayn.reservation.repositories.UserRepository;
 import org.santayn.reservation.web.dto.teacher.TeacherCreateRequest;
 import org.santayn.reservation.web.dto.teacher.TeacherDto;
 import org.santayn.reservation.web.exception.NotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,16 +21,22 @@ public class TeacherService {
 
     private final UserRepository userRepo;
     private final FacultyRepository facultyRepo;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional
     public TeacherDto create(TeacherCreateRequest r) {
         var faculty = facultyRepo.findById(r.facultyId())
                 .orElseThrow(() -> new NotFoundException("Faculty not found: " + r.facultyId()));
 
+        // В DTO сейчас поле называется passwordHash, но сюда может прийти как «сырой» пароль, так и готовый хэш.
+        // Если это не bcrypt-хэш — кодируем.
+        String incoming = r.passwordHash();
+        String hashToStore = isBcrypt(incoming) ? incoming : passwordEncoder.encode(incoming);
+
         var u = User.builder()
                 .fullName(r.fullName())
                 .login(r.login())
-                .passwordHash(r.passwordHash())
+                .passwordHash(hashToStore)
                 .admin(false) // преподаватель не админ
                 .faculty(faculty)
                 .build();
@@ -57,5 +64,11 @@ public class TeacherService {
             throw new NoSuchElementException("User with id=" + id + " not found");
         }
         userRepo.deleteById(id);
+    }
+
+    private boolean isBcrypt(String value) {
+        if (value == null) return false;
+        // Примерные формы: $2a$, $2b$, $2y$
+        return value.startsWith("$2a$") || value.startsWith("$2b$") || value.startsWith("$2y$");
     }
 }
