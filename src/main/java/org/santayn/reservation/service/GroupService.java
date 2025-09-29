@@ -2,9 +2,11 @@
 package org.santayn.reservation.service;
 
 import lombok.RequiredArgsConstructor;
-import org.santayn.reservation.models.group.Group;
+import org.santayn.reservation.models.group.Group; // или твой класс Group, см. импорт
 import org.santayn.reservation.repositories.GroupRepository;
-import org.santayn.reservation.web.dto.group.*;
+import org.santayn.reservation.web.dto.group.GroupCreateRequest;
+import org.santayn.reservation.web.dto.group.GroupDto;
+import org.santayn.reservation.web.dto.group.GroupUpdateRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,27 +24,45 @@ public class GroupService {
                 .name(r.name())
                 .title(r.title())
                 .courseCode(r.courseCode())
+                .capacity(r.size() == null ? 0 : r.size())
                 .build();
         g = repo.save(g);
-        return new GroupDto(g.getId(), g.getName(), g.getTitle(), g.getCourseCode());
+        return toDto(g);
     }
 
     @Transactional(readOnly = true)
     public List<GroupDto> list() {
         return repo.findAll().stream()
-                .map(g -> new GroupDto(g.getId(), g.getName(), g.getTitle(), g.getCourseCode()))
+                .map(this::toDto)
                 .toList();
     }
 
-    // 🔥 Новый метод — удаление группы
-    // org/santayn/reservation/service/GroupService.java
     @Transactional
-    public void delete(Long id) {
-        Integer intId = Math.toIntExact(id); // безопасно, если id помещается в int
-        if (!repo.existsById(intId)) {
-            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
-        }
-        repo.deleteById(intId);
+    public GroupDto update(Integer id, GroupUpdateRequest r) {
+        var g = repo.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Группа с id=" + id + " не найдена"));
+        g.setName(r.name());
+        g.setTitle(r.title());
+        g.setCourseCode(r.courseCode());
+        g.setCapacity(r.size() == null ? 0 : r.size());
+        return toDto(repo.save(g));
     }
 
+    @Transactional
+    public void delete(Integer id) {
+        if (!repo.existsById(id)) {
+            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        }
+        repo.deleteById(id);
+    }
+
+    private GroupDto toDto(Group g) {
+        return new GroupDto(
+                g.getId(),
+                g.getName(),
+                g.getTitle(),
+                g.getCourseCode(),
+                g.getCapacity() == null ? 0 : g.getCapacity()
+        );
+    }
 }

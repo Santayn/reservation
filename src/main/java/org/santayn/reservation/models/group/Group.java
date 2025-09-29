@@ -31,4 +31,8 @@ public class Group {
 
     // ВНИМАНИЕ: никаких @OneToMany здесь.
     // Связи идут через booking_group и teacher_group по FK.
+    /** Вместимость группы (сколько студентов в группе) */
+    @Column(name = "capacity", nullable = false)
+    @Builder.Default
+    private Integer capacity = 0;
 }

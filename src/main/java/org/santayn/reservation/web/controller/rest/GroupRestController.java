@@ -27,7 +27,7 @@ public class GroupRestController {
 
     // 🔥 Удалить группу по id
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(@PathVariable Integer id) {
         service.delete(id); // реализуй в GroupService (например, repository.deleteById(id))
         return ResponseEntity.noContent().build();
     }

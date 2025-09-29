@@ -5,7 +5,7 @@
     <title>Создать группу — кабинет</title>
     <link rel="stylesheet" href="/cabinet/css/cabinet.css">
     <script type="module">
-        import {injectSidebar, jfetch, qs, qsa, show, hide, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
 
         async function loadGroups(){
           const box = qs('#groups-list');
@@ -21,7 +21,11 @@
               row.className = 'kv';
               row.innerHTML = `
                 <div>#${g.id}</div>
-                <div><b>${g.name}</b>${g.title?(' — '+g.title):''}${g.courseCode!=null?` <span class="muted">(course ${g.courseCode})</span>`:''}</div>
+                <div>
+                  <b>${g.name}</b>${g.title?(' — '+g.title):''}
+                  ${g.courseCode!=null?` <span class="muted">(course ${g.courseCode})</span>`:''}
+                  <span class="muted"> · size=${g.size ?? 0}</span>
+                </div>
                 <div style="text-align:right">
                   <button class="btn danger" data-del="${g.id}" title="Удалить группу #${g.id}">Удалить</button>
                 </div>
@@ -39,19 +43,24 @@
           const name = qs('#g-name').value.trim();
           const title = qs('#g-title').value.trim();
           const courseVal = qs('#g-course').value;
+          const sizeVal = qs('#g-size').value;
+
           const courseCode = courseVal ? Number(courseVal) : null;
+          const size = sizeVal ? Math.max(0, Number(sizeVal)) : 0;
+
           if (!name) return toastErr(err, 'Укажите имя группы');
 
           try{
             const dto = await jfetch('/api/groups', {
               credentials:'same-origin',
               method:'POST',
-              body: JSON.stringify({ name, title: title || null, courseCode })
+              body: JSON.stringify({ name, title: title || null, courseCode, size })
             });
             toastOK(ok, `Группа создана (id=${dto.id})`);
             qs('#g-name').value = '';
             qs('#g-title').value = '';
             qs('#g-course').value = '';
+            qs('#g-size').value = '';
             await loadGroups();
           }catch(e){
             toastErr(err, e.message);
@@ -62,10 +71,7 @@
           const err = qs('#groups-error'), ok = qs('#groups-ok');
           clearAlerts();
           try{
-            await jfetch(`/api/groups/${id}`, {
-              credentials:'same-origin',
-              method:'DELETE'
-            });
+            await jfetch(`/api/groups/${id}`, { credentials:'same-origin', method:'DELETE' });
             toastOK(ok, `Группа #${id} удалена`);
             await loadGroups();
           }catch(e){
@@ -76,8 +82,6 @@
         window.addEventListener('DOMContentLoaded', async ()=>{
           await injectSidebar('groups');
           qs('#btn-create-group').addEventListener('click', createGroup);
-
-          // Делегирование кликов по кнопкам удаления
           qs('#groups-list').addEventListener('click', (e)=>{
             const btn = e.target.closest('[data-del]');
             if(!btn) return;
@@ -87,7 +91,6 @@
               deleteGroup(id);
             }
           });
-
           loadGroups();
         });
     </script>
@@ -114,9 +117,13 @@
                 <label>Course code (опционально)</label>
                 <input id="g-course" type="number" inputmode="numeric" placeholder="например, 1"/>
             </div>
+            <div>
+                <label>Вместимость (size)</label>
+                <input id="g-size" type="number" inputmode="numeric" min="0" placeholder="например, 30"/>
+            </div>
         </div>
         <button id="btn-create-group" class="btn primary">Создать</button>
-        <div class="hint">POST <code>/api/groups</code> → { name, title, courseCode }</div>
+        <div class="hint">POST <code>/api/groups</code> → { name, title, courseCode, <b>size</b> }</div>
     </section>
 
     <section class="card">

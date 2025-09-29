@@ -14,7 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-@Service @RequiredArgsConstructor
+@Service
+@RequiredArgsConstructor
 public class TeacherGroupService {
     private final TeacherGroupRepository repo;
     private final UserRepository userRepo;
@@ -22,11 +23,13 @@ public class TeacherGroupService {
 
     @Transactional
     public void create(TeacherGroupCreateRequest r) {
+        // валидируем наличие пользователя и группы
         userRepo.findById(r.teacherId())
                 .orElseThrow(() -> new NotFoundException("User (teacher) not found: " + r.teacherId()));
         groupRepo.findById(r.groupId())
                 .orElseThrow(() -> new NotFoundException("Group not found: " + r.groupId()));
 
+        // защита от дублей
         if (!repo.existsByTeacherIdAndGroupId(r.teacherId(), r.groupId())) {
             repo.save(Teacher_Group.builder()
                     .teacherId(r.teacherId())
@@ -37,21 +40,26 @@ public class TeacherGroupService {
 
     @Transactional(readOnly = true)
     public List<GroupDto> listByTeacher(Long teacherId) {
-        // проверим, что преподаватель существует (на всякий)
+        // убедимся, что преподаватель существует
         userRepo.findById(teacherId)
                 .orElseThrow(() -> new NotFoundException("User (teacher) not found: " + teacherId));
 
         return repo.findByTeacherId(teacherId).stream()
-                .map(link -> groupRepo.findById(link.getGroupId())
-                        .map(g -> new GroupDto(g.getId(), g.getName(), g.getTitle(), g.getCourseCode()))
-                        .orElse(null))
+                .map(link -> groupRepo.findById(link.getGroupId()).orElse(null))
                 .filter(g -> g != null)
+                .map(g -> new GroupDto(
+                        g.getId(),
+                        g.getName(),
+                        g.getTitle(),
+                        g.getCourseCode(),
+                        g.getCapacity() == null ? 0 : g.getCapacity()
+                ))
                 .toList();
     }
 
     @Transactional
     public void deleteLink(Long teacherId, Integer groupId) {
-        // ошибок не бросаем если уже нет — просто идемпотентная операция
+        // идемпотентно: если связи нет — просто ничего не произойдёт
         repo.deleteByTeacherIdAndGroupId(teacherId, groupId);
     }
 }
