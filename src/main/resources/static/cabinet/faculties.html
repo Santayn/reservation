@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8"/>
     <title>Создать факультет — кабинет</title>
-    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <link rel="stylesheet" href="./css/cabinet.css">
     <script type="module">
-        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from './js/api.js';
 
         async function loadFaculties(){
           const box = qs('#faculties-list');
           box.innerHTML = '';
           try{
-            const list = await jfetch('/api/faculties', { credentials:'same-origin' });
+            const list = await jfetch('../api/faculties', { credentials:'same-origin' });
             if (!list.length){
               box.innerHTML = '<div class="muted">Пока нет факультетов</div>';
               return;
@@ -40,7 +40,7 @@
           if (!name) return toastErr(err, 'Укажите название факультета');
 
           try{
-            const dto = await jfetch('/api/faculties', {
+            const dto = await jfetch('../api/faculties', {
               credentials:'same-origin',
               method:'POST',
               body: JSON.stringify({ name })
@@ -57,7 +57,7 @@
           const err = qs('#faculties-error'), ok = qs('#faculties-ok');
           clearAlerts();
           try{
-            await jfetch(`/api/faculties/${id}`, {
+            await jfetch(`../api/faculties/${id}`, {
               credentials:'same-origin',
               method:'DELETE'
             });

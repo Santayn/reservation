@@ -24,7 +24,7 @@ export async function jfetch(url, options={}){
 export async function injectSidebar(activePage){
   const el = document.getElementById('sidebar');
   if (!el) return;
-  const html = await fetch('/cabinet/partials/sidebar.html').then(r=>r.text());
+  const html = await fetch('./partials/sidebar.html').then(r=>r.text());
   el.innerHTML = html;
   const a = el.querySelector(`[data-page="${activePage}"]`);
   if (a) a.classList.add('active');

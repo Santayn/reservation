@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8"/>
     <title>Создать преподавателя — кабинет</title>
-    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <link rel="stylesheet" href="./css/cabinet.css">
     <script type="module">
-        import {injectSidebar, jfetch, qs, show, hide, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+        import {injectSidebar, jfetch, qs, show, hide, toastOK, toastErr, clearAlerts} from './js/api.js';
 
         async function preloadFaculties(){
           const sel = qs('#t-faculty');
           sel.innerHTML = '<option value="">Загрузка…</option>';
           try{
-            const list = await jfetch('/api/faculties', { credentials:'same-origin' });
+            const list = await jfetch('../api/faculties', { credentials:'same-origin' });
             sel.innerHTML = list.length ? '' : '<option value="">— нет факультетов —</option>';
             list.forEach(f=>{
               const opt = document.createElement('option');
@@ -25,7 +25,7 @@
           const box = qs('#teachers-list');
           box.innerHTML = '';
           try{
-            const list = await jfetch('/api/teachers', { credentials:'same-origin' });
+            const list = await jfetch('../api/teachers', { credentials:'same-origin' });
             if (!list.length){ box.innerHTML = '<div class="muted">Пока нет преподавателей</div>'; return; }
             list.forEach(t=>{
               const row = document.createElement('div');
@@ -53,7 +53,7 @@
             return toastErr(err, 'Заполните обязательные поля');
           }
           try{
-            const dto = await jfetch('/api/teachers', {
+            const dto = await jfetch('../api/teachers', {
               credentials:'same-origin',
               method:'POST',
               body: JSON.stringify({ fullName, login, passwordHash, facultyId: Number(facultyId) })
@@ -68,7 +68,7 @@
           const err = qs('#teacher-error'), ok = qs('#teacher-ok');
           clearAlerts();
           try{
-            await jfetch(`/api/teachers/${id}`, {
+            await jfetch(`../api/teachers/${id}`, {
               credentials:'same-origin',
               method:'DELETE'
             });

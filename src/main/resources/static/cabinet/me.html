@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8"/>
     <title>О себе — кабинет</title>
-    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <link rel="stylesheet" href="./css/cabinet.css">
     <script type="module">
-        import {injectSidebar, jfetch, qs, show, hide, toastErr} from '/cabinet/js/api.js';
+        import {injectSidebar, jfetch, qs, show, hide, toastErr} from './js/api.js';
 
         async function loadMe(){
           const err = qs('#me-error'), box = qs('#me-box');
           hide(err); hide(box);
           try{
-            const me = await jfetch('/api/v1/users/me', { credentials:'same-origin' });
+            const me = await jfetch('../api/v1/users/me', { credentials:'same-origin' });
             qs('#me-first').textContent = me.firstName ?? '';
             qs('#me-last').textContent  = me.lastName ?? '';
             qs('#me-login').textContent = me.login ?? '';

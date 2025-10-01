@@ -11,7 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.NoSuchElementException;
 
-@Service @RequiredArgsConstructor
+@Service
+@RequiredArgsConstructor
 public class FacultyService {
     private final FacultyRepository repo;
 

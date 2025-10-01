@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8"/>
     <title>Назначить группы преподавателю — кабинет</title>
-    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <link rel="stylesheet" href="./css/cabinet.css">
     <script type="module">
-        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from './js/api.js';
 
         async function preloadTeachers(){
           const sel = qs('#tg-teacher');
           sel.innerHTML = '<option value="">Загрузка…</option>';
           try{
-            const list = await jfetch('/api/teachers', { credentials:'same-origin' });
+            const list = await jfetch('../api/teachers', { credentials:'same-origin' });
             sel.innerHTML = list.length ? '' : '<option value="">— нет преподавателей —</option>';
             list.forEach(t=>{
               const opt = document.createElement('option');
@@ -28,7 +28,7 @@
           const sel = qs('#tg-group');
           sel.innerHTML = '<option value="">Загрузка…</option>';
           try{
-            const list = await jfetch('/api/groups', { credentials:'same-origin' });
+            const list = await jfetch('../api/groups', { credentials:'same-origin' });
             sel.innerHTML = list.length ? '' : '<option value="">— нет групп —</option>';
             list.forEach(g=>{
               const opt = document.createElement('option');
@@ -50,7 +50,7 @@
             return;
           }
           try{
-            const groups = await jfetch(`/api/teacher-groups/${teacherId}`, { credentials:'same-origin' });
+            const groups = await jfetch(`../api/teacher-groups/${teacherId}`, { credentials:'same-origin' });
             if (!groups.length){
               box.innerHTML = '<div class="muted">У преподавателя нет назначенных групп</div>';
               return;
@@ -80,7 +80,7 @@
           const groupId = Number(qs('#tg-group').value);
           if (!teacherId || !groupId) return toastErr(err, 'Выберите преподавателя и группу');
           try{
-            await jfetch('/api/teacher-groups', {
+            await jfetch('../api/teacher-groups', {
               credentials:'same-origin',
               method:'POST',
               body: JSON.stringify({ teacherId, groupId })
@@ -97,7 +97,7 @@
           const err = qs('#tg-error'), ok = qs('#tg-ok');
           const teacherId = Number(qs('#tg-teacher').value);
           try{
-            await jfetch(`/api/teacher-groups?teacherId=${teacherId}&groupId=${groupId}`, {
+            await jfetch(`../api/teacher-groups?teacherId=${teacherId}&groupId=${groupId}`, {
               credentials:'same-origin',
               method:'DELETE'
             });
