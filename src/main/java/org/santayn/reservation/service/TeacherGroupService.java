@@ -74,8 +74,7 @@ public class TeacherGroupService {
         return new GroupDto(
                 g.getId(),
                 g.getName(),
-                g.getPersonsCount(),
-                facultyId
+                g.getPersonsCount()
         );
     }
 }

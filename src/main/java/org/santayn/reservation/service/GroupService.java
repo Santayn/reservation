@@ -1,117 +1,134 @@
 package org.santayn.reservation.service;
 
 import lombok.RequiredArgsConstructor;
-import org.santayn.reservation.models.faculty.Faculty;
 import org.santayn.reservation.models.group.Group;
-import org.santayn.reservation.models.group.GroupFaculty;
 import org.santayn.reservation.repositories.FacultyRepository;
-import org.santayn.reservation.repositories.GroupFacultyRepository;
 import org.santayn.reservation.repositories.GroupRepository;
 import org.santayn.reservation.web.dto.group.GroupCreateRequest;
 import org.santayn.reservation.web.dto.group.GroupDto;
 import org.santayn.reservation.web.dto.group.GroupUpdateRequest;
-import org.santayn.reservation.web.exception.NotFoundException;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
 public class GroupService {
 
-    private final GroupRepository repo;
-    private final GroupFacultyRepository groupFacultyRepo;
-    private final FacultyRepository facultyRepo;
-
-    @Transactional
-    public GroupDto create(GroupCreateRequest r) {
-        // создаём группу
-        var g = Group.builder()
-                .name(r.name())
-                .personsCount(r.personsCount())
-                .build();
-        g = repo.save(g);
-
-        // при необходимости создаём связь с факультетом
-        Long facultyId = null;
-        if (r.facultyId() != null) {
-            facultyId = linkFaculty(g.getId(), r.facultyId());
-        }
-
-        return toDto(g, facultyId);
-    }
+    private final GroupRepository groupRepository;
+    private final FacultyRepository facultyRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     @Transactional(readOnly = true)
     public List<GroupDto> list() {
-        return repo.findAll().stream()
-                .map(g -> toDto(g, firstFacultyId(g.getId())))
+        return groupRepository.findAll(Sort.by(Sort.Order.asc("name")))
+                .stream()
+                .map(this::toDto)
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public GroupDto get(Long id) {
+        Group g = groupRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Группа не найдена: id=" + id));
+        return toDto(g);
+    }
+
     @Transactional
-    public GroupDto update(Long id, GroupUpdateRequest r) {
-        var g = repo.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("Группа с id=" + id + " не найдена"));
+    public GroupDto create(GroupCreateRequest req) {
+        if (req == null) throw new IllegalArgumentException("Пустой запрос создания группы");
 
-        g.setName(r.name());
-        g.setPersonsCount(r.personsCount());
-        g = repo.save(g);
+        String name = req.name().trim();
+        groupRepository.findByName(name).ifPresent(x -> {
+            throw new IllegalArgumentException("Группа с таким названием уже существует: " + name);
+        });
 
-        Long facultyId = null;
-        if (r.facultyId() != null) {
-            facultyId = linkFaculty(id, r.facultyId());
-        } else {
-            facultyId = firstFacultyId(id);
+        Integer count = req.personsCount() == null ? 0 : Math.max(0, req.personsCount());
+
+        Group entity = Group.builder()
+                .name(name)
+                .personsCount(count)
+                .build();
+
+        Group saved = groupRepository.save(entity);
+
+        // Опциональная привязка к факультету
+        if (req.facultyId() != null) {
+            Long facultyId = req.facultyId();
+            facultyRepository.findById(facultyId).orElseThrow(
+                    () -> new NoSuchElementException("Факультет не найден: id=" + facultyId)
+            );
+            // on conflict do nothing — чтобы не падать при повторном вызове
+            jdbcTemplate.update(
+                    "insert into group_faculty (faculty_id, group_id) values (?, ?) " +
+                            "on conflict (faculty_id, group_id) do nothing",
+                    facultyId, saved.getId()
+            );
         }
 
-        return toDto(g, facultyId);
+        return toDto(saved);
+    }
+
+    @Transactional
+    public GroupDto update(Long id, GroupUpdateRequest req) {
+        if (req == null) throw new IllegalArgumentException("Пустой запрос обновления группы");
+
+        Group g = groupRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Группа не найдена: id=" + id));
+
+        String newName = req.name().trim();
+        if (!newName.equals(g.getName())) {
+            groupRepository.findByName(newName).ifPresent(x -> {
+                throw new IllegalArgumentException("Группа с таким названием уже существует: " + newName);
+            });
+            g.setName(newName);
+        }
+
+        g.setPersonsCount(req.personsCount() == null ? 0 : Math.max(0, req.personsCount()));
+        Group saved = groupRepository.save(g);
+
+        // Обновляем привязку факультета (один факультет максимум из UI)
+        // Сначала удалим старые связи
+        jdbcTemplate.update("delete from group_faculty where group_id = ?", saved.getId());
+
+        if (req.facultyId() != null) {
+            Long facultyId = req.facultyId();
+            facultyRepository.findById(facultyId).orElseThrow(
+                    () -> new NoSuchElementException("Факультет не найден: id=" + facultyId)
+            );
+            jdbcTemplate.update(
+                    "insert into group_faculty (faculty_id, group_id) values (?, ?) " +
+                            "on conflict (faculty_id, group_id) do nothing",
+                    facultyId, saved.getId()
+            );
+        }
+
+        return toDto(saved);
     }
 
     @Transactional
     public void delete(Long id) {
-        if (!repo.existsById(id)) {
-            throw new NoSuchElementException("Группа с id=" + id + " не найдена");
+        if (!groupRepository.existsById(id)) {
+            throw new NoSuchElementException("Группа не найдена: id=" + id);
         }
-        repo.deleteById(id);
-        // связи group↔faculty/group↔teacher/booking_groups удалятся каскадно на уровне БД (если сконфигурировано)
+        // Удалим зависимые связи, чтобы не остался мусор
+        try {
+            jdbcTemplate.update("delete from group_faculty where group_id = ?", id);
+        } catch (EmptyResultDataAccessException ignored) {}
+        groupRepository.deleteById(id);
     }
 
-    // ---------- helpers ----------
-
-    /** Гарантирует наличие связи group↔faculty, проверяет существование факультета. Возвращает facultyId. */
-    private Long linkFaculty(Long groupId, Long facultyId) {
-        Faculty f = facultyRepo.findById(facultyId)
-                .orElseThrow(() -> new NotFoundException("Faculty not found: " + facultyId));
-
-        if (!groupFacultyRepo.existsByGroup_IdAndFaculty_Id(groupId, facultyId)) {
-            GroupFaculty.Id id = new GroupFaculty.Id(groupId, facultyId);
-            groupFacultyRepo.save(
-                    GroupFaculty.builder()
-                            .id(id)
-                            .group(repo.getReferenceById(groupId))
-                            .faculty(f)
-                            .build()
-            );
-        }
-        return facultyId;
-    }
-
-    /** Возвращает любой (первый) facultyId, связанный с группой, либо null. */
-    private Long firstFacultyId(Long groupId) {
-        return groupFacultyRepo.findByGroup_Id(groupId).stream()
-                .findFirst()
-                .map(gf -> gf.getFaculty().getId())
-                .orElse(null);
-    }
-
-    private GroupDto toDto(Group g, Long facultyId) {
+    private GroupDto toDto(Group g) {
         return new GroupDto(
                 g.getId(),
                 g.getName(),
-                g.getPersonsCount(),
-                facultyId
+                Objects.requireNonNullElse(g.getPersonsCount(), 0)
         );
     }
 }

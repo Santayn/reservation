@@ -1,12 +1,17 @@
 package org.santayn.reservation.web.dto.group;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
-/** Создание группы. facultyId опционален — если передан, создадим связь group↔faculty. */
+/**
+ * Запрос на создание группы.
+ * Поддерживает опциональный facultyId, который при наличии
+ * привяжет группу к факультету через таблицу group_faculty.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record GroupCreateRequest(
         @NotBlank String name,
-        @NotNull @Min(1) Integer personsCount,
+        @Min(0) Integer personsCount,
         Long facultyId
 ) {}

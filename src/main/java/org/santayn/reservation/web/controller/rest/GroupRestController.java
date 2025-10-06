@@ -9,6 +9,7 @@ import org.santayn.reservation.web.dto.group.GroupUpdateRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -18,20 +19,26 @@ public class GroupRestController {
 
     private final GroupService service;
 
-    @PostMapping
-    public ResponseEntity<GroupDto> create(@Valid @RequestBody GroupCreateRequest r) {
-        return ResponseEntity.ok(service.create(r));
-    }
-
     @GetMapping
     public ResponseEntity<List<GroupDto>> list() {
         return ResponseEntity.ok(service.list());
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<GroupDto> get(@PathVariable Long id) {
+        return ResponseEntity.ok(service.get(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<GroupDto> create(@Valid @RequestBody GroupCreateRequest req) {
+        GroupDto created = service.create(req);
+        return ResponseEntity.created(URI.create("/api/groups/" + created.id())).body(created);
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<GroupDto> update(@PathVariable Long id,
-                                           @Valid @RequestBody GroupUpdateRequest r) {
-        return ResponseEntity.ok(service.update(id, r));
+                                           @Valid @RequestBody GroupUpdateRequest req) {
+        return ResponseEntity.ok(service.update(id, req));
     }
 
     @DeleteMapping("/{id}")

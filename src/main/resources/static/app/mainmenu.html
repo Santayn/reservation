@@ -199,7 +199,7 @@
                         <button type="button" class="room" data-room="Ауд. 211" data-capacity="29">Ауд. 211 (29)</button>
                         <button type="button" class="room" data-room="Ауд. 212" data-capacity="31">Ауд. 212 (31)</button>
                         <button type="button" class="room" data-room="Ауд. 213" data-capacity="36">Ауд. 213 (36)</button>
-                        <button type="button" class="room" data-room="Ауд. 214" data-capacity="24">Ауд. 214 (24)</button>
+                        <button type="button" class="room" data-room="Ауд. 214" data-capacity="23">Ауд. 214 (23)</button>
                         <button type="button" class="room" data-room="Ауд. 215" data-capacity="41">Ауд. 215 (41)</button>
                         <button type="button" class="room" data-room="Ауд. 216" data-capacity="22">Ауд. 216 (22)</button>
                         <button type="button" class="room" data-room="Ауд. 217" data-capacity="34">Ауд. 217 (34)</button>
@@ -271,12 +271,16 @@
 
         <div class="kv">
             <div>Факультеты:</div>
-            <div id="c-faculties" class="list"></div>
+            <div>
+                <select id="c-faculties" multiple style="max-width:260px; min-width:220px; height:120px;"></select>
+            </div>
         </div>
 
         <div class="kv">
             <div>Специализации:</div>
-            <div id="c-specs" class="list"></div>
+            <div>
+                <select id="c-specs" multiple style="max-width:260px; min-width:220px; height:120px;"></select>
+            </div>
         </div>
 
         <div class="split" style="margin-top:8px">
@@ -398,19 +402,12 @@
       const bSel = document.getElementById('c-building');
       bSel.innerHTML = '<option value="">— не выбрано —</option>' + (PREF_BUILDINGS||[]).map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
 
-      const facBox = document.getElementById('c-faculties');
-      facBox.innerHTML = (PREF_FACULTIES||[]).map(f=>(
-        `<label style="display:flex;gap:6px;align-items:center">
-           <input type="checkbox" value="${f.id}"> <span>${escapeHtml(f.name)}</span>
-         </label>`
-      )).join('');
+      // выпадающие списки с мультивыбором
+      const facSel = document.getElementById('c-faculties');
+      facSel.innerHTML = (PREF_FACULTIES||[]).map(f=>`<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('');
 
-      const specBox = document.getElementById('c-specs');
-      specBox.innerHTML = (PREF_SPECS||[]).map(s=>(
-        `<label style="display:flex;gap:6px;align-items:center">
-           <input type="checkbox" value="${s.id}"> <span>${escapeHtml(s.name)}</span>
-         </label>`
-      )).join('');
+      const specSel = document.getElementById('c-specs');
+      specSel.innerHTML = (PREF_SPECS||[]).map(s=>`<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
     }
 
     // ====== утилиты ======
@@ -446,6 +443,68 @@
         const who = rb?.by ? `\nЗанято: ${rb.by}` : (groups.length ? '\nЗанято' : '\nСвободно');
         el.title = `${name}\nВместимость: ${cap}\nНазначено: ${used}${who}`;
       });
+    }
+
+    // ====== загрузка для перекраски с бэка ======
+    async function fetchUtilization(dateStr, slotId) {
+      const url = `/api/utilization?date=${encodeURIComponent(dateStr)}&slotId=${encodeURIComponent(slotId)}`;
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' }, credentials:'same-origin' });
+      if (!resp.ok) throw new Error(`utilization ${resp.status}`);
+      return resp.json(); // [{ classroomId, capacity, load, utilization, badgeClass }]
+    }
+    function mapBadgeToClass(badgeClass, capacity, load) {
+      if (badgeClass) {
+        switch (badgeClass) {
+          case 'util-empty': return 'idle';
+          case 'util-25':
+          case 'util-50':
+          case 'util-100':  return 'ok';
+          case 'util-over': {
+            const ratio = capacity > 0 ? load / capacity : 0;
+            if (ratio <= 1.25) return 'warn';
+            if (ratio <= 1.50) return 'danger';
+            return 'over';
+          }
+        }
+      }
+      if (load <= 0) return 'idle';
+      if (capacity <= 0 || load <= capacity) return 'ok';
+      const ratio = load / capacity;
+      if (ratio <= 1.25) return 'warn';
+      if (ratio <= 1.50) return 'danger';
+      return 'over';
+    }
+    async function recolorFromApi() {
+      try {
+        if (!selectedDate || selectedSlotId == null) return;
+        const util = await fetchUtilization(selectedDate, Number(selectedSlotId));
+        const byId = new Map(util.map(u => [String(u.classroomId), u]));
+
+        document.querySelectorAll('.room').forEach(el => {
+          if (el.classList.contains('foyer')) return;
+
+          const id = el.dataset.classroomId;
+          const info = id ? byId.get(String(id)) : null;
+
+          el.classList.remove('idle','ok','warn','danger','over');
+
+          if (!info) {
+            el.classList.add('idle');
+            el.title = `${el.dataset.room}\nВместимость: ${el.dataset.capacity || 0}\nНазначено: 0\nСвободно`;
+            return;
+          }
+
+          const cap  = Number(info.capacity || 0);
+          const load = Number(info.load || 0);
+          const css  = mapBadgeToClass(info.badgeClass, cap, load);
+
+          el.classList.add(css);
+          el.title = `${el.dataset.room}\nВместимость: ${cap}\nНазначено: ${load}`;
+        });
+      } catch (e) {
+        console.warn('utilization fallback to local calc', e);
+        recolorAll();
+      }
     }
 
     // ====== API бронирований ======
@@ -550,21 +609,28 @@
     function fillRoomForm(dto){
       document.getElementById('c-cap').value = dto.capacity ?? 0;
       document.getElementById('c-building').value = dto.buildingId ?? '';
+
+      // мультиселекты
+      const facSel = document.getElementById('c-faculties');
+      const specSel = document.getElementById('c-specs');
+
       const facSet = new Set(dto.facultyIds || []);
-      document.querySelectorAll('#c-faculties input[type="checkbox"]').forEach(cb=>{
-        cb.checked = facSet.has(Number(cb.value));
-      });
+      [...facSel.options].forEach(o => { o.selected = facSet.has(Number(o.value)); });
+
       const specSet = new Set(dto.specializationIds || []);
-      document.querySelectorAll('#c-specs input[type="checkbox"]').forEach(cb=>{
-        cb.checked = specSet.has(Number(cb.value));
-      });
+      [...specSel.options].forEach(o => { o.selected = specSet.has(Number(o.value)); });
     }
 
     function collectRoomForm(){
       const cap = Number(document.getElementById('c-cap').value || 0);
       const buildingId = document.getElementById('c-building').value ? Number(document.getElementById('c-building').value) : null;
-      const facultyIds = [...document.querySelectorAll('#c-faculties input:checked')].map(cb=>Number(cb.value));
-      const specializationIds = [...document.querySelectorAll('#c-specs input:checked')].map(cb=>Number(cb.value));
+
+      const facSel = document.getElementById('c-faculties');
+      const facultyIds = [...facSel.selectedOptions].map(o=>Number(o.value));
+
+      const specSel = document.getElementById('c-specs');
+      const specializationIds = [...specSel.selectedOptions].map(o=>Number(o.value));
+
       return { capacity: cap, buildingId, facultyIds, specializationIds };
     }
 
@@ -637,7 +703,7 @@
           const by = ME.login || resp?.bookedBy || '—';
           if (!roomBookings[name]) roomBookings[name] = {};
           roomBookings[name][selectedSlotId] = { id: resp?.id, groups: sel, by };
-          recolorAll(); closeDrawer();
+          await recolorFromApi(); closeDrawer();
         }catch(err){ alert(err.message || 'Ошибка сохранения'); }
       };
 
@@ -652,7 +718,7 @@
             await apiDeleteBookingByKey({date: selectedDate, slotId: Number(selectedSlotId), classroomId});
           }
           if (roomBookings[name]) delete roomBookings[name][selectedSlotId];
-          recolorAll(); closeDrawer();
+          await recolorFromApi(); closeDrawer();
         }catch(err){ alert(err.message || 'Ошибка удаления'); }
       };
 
@@ -668,7 +734,7 @@
           currentRoomEl.textContent = `${base} (${updated.capacity ?? 0})`;
           dCapLbl.textContent = updated.capacity ?? 0;
           CLASSROOMS.set(updated.name, { id: updated.id, name: updated.name, capacity: updated.capacity ?? 0 });
-          recolorAll();
+          await recolorFromApi();
           alert('Кабинет сохранён');
         }catch(e){
           alert(e?.message || 'Не удалось сохранить кабинет');
@@ -703,10 +769,12 @@
     slotFilter.addEventListener('change', async ()=>{
       selectedSlotId = Number(slotFilter.value);
       await reloadBookingsAndPaint();
+      await recolorFromApi();
     });
     dateInput.addEventListener('change', async ()=>{
       selectedDate = dateInput.value || new Date().toISOString().slice(0,10);
       await reloadBookingsAndPaint();
+      await recolorFromApi();
     });
 
     async function reloadBookingsAndPaint(){
@@ -724,7 +792,7 @@
       }catch(e){
         console.warn('Не удалось загрузить бронирования по слоту:', e);
       }
-      recolorAll();
+      await recolorFromApi();
     }
 
     // ====== init ======
