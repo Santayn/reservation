@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Схема здания · бронирование и свойства кабинета</title>
+    <style>
+        :root{
+          --line:#222; --bg:#f7f7f9; --text:#111;
+          --free:#e8f8ef; --free-border:#6ccf96;
+          --warn:#fff4cc; --warn-border:#f2c200;
+          --danger:#ffe1e1; --danger-border:#ff6b6b;
+          --over:#111; --over-text:#fff;
+          --hover:#f1f5ff;
+        }
+        *{box-sizing:border-box}
+        html,body{height:100%}
+        body{margin:0;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+        .wrap{width:min(1200px,96vw);margin:0 auto;padding:28px 12px 48px}
+        h1{margin:0 0 6px;font-size:20px}
+        p.lead{margin:0 0 14px;color:#555}
+
+        .toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:12px}
+        .toolbar .group{display:flex;gap:8px;align-items:center}
+        select,button,.btn,input[type="date"]{border:2px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+        input[type="date"]{cursor:text}
+        .floor-switch button.active{background:var(--hover);font-weight:600}
+        .actions{margin-left:auto;display:flex;gap:8px}
+        .btn.btn-menu{background:#2563eb;border-color:#2563eb;color:#fff}
+        .btn:disabled{opacity:.6;cursor:not-allowed}
+
+        .building{border:2px solid var(--line);background:#fff;border-radius:10px;min-height:420px}
+        .wings{display:grid;grid-template-columns:2fr 1.5fr 2fr}
+        @media (max-width:1000px){
+          .wings{grid-template-columns:1fr}
+          .wing{border-right:none;border-bottom:2px solid var(--line)}
+          .wing:last-child{border-bottom:none}
+        }
+        .wing{border-right:2px solid var(--line);padding:14px}
+        .wing:last-child{border-right:none}
+        .wing h3{margin:0 0 8px;text-align:center;font-size:14px}
+        .rooms{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+        .room{border:2px dashed #999;border-radius:8px;padding:6px;text-align:center;font-size:12px;cursor:pointer;transition:transform .12s ease, background-color .12s ease, border-color .12s ease}
+        .room:hover{transform:translateY(-1px)}
+        .room:focus-visible{outline:3px solid #60a5fa; outline-offset:2px}
+
+        .room.idle   {background:#eee;border-color:#bbb;color:#333}
+        .room.ok     {background:var(--free);border-color:var(--free-border)}
+        .room.warn   {background:var(--warn);border-color:var(--warn-border)}
+        .room.danger {background:var(--danger);border-color:var(--danger-border)}
+        .room.over   {background:var(--over);border-color:#000;color:var(--over-text);cursor:pointer}
+
+        .center .room{width:90%;margin:0 auto 10px;font-size:13px}
+        .foyer{cursor:default;border-style:solid!important;background:#eee}
+
+        .floor{display:none}.floor.active{display:block}
+        .entrance{width:160px;height:80px;margin:6px auto 0;border:2px solid var(--line);border-top:none;border-radius:0 0 80px 80px;background:#eee;display:grid;place-items:center}
+
+        /* Drawer */
+        .overlay{position:fixed;inset:0;background:#0006;opacity:0;pointer-events:none;transition:.2s;z-index:20}
+        .overlay.open{opacity:1;pointer-events:auto}
+        .drawer{position:fixed;top:0;right:0;height:100vh;width:min(520px,92vw);background:#fff;border-left:2px solid var(--line);transform:translateX(100%);transition:.25s;z-index:30;display:flex;flex-direction:column}
+        .drawer.open{transform:none}
+        .drawer header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:2px solid var(--line)}
+        .drawer header h2{margin:0;font-size:16px}
+        .drawer .content{padding:12px 16px;overflow:auto}
+        .kv{display:grid;grid-template-columns:140px 1fr;gap:8px;align-items:center;margin:6px 0}
+        .chips{display:flex;flex-wrap:wrap;gap:6px}
+        .chip{border:1px solid #bbb;border-radius:999px;padding:4px 8px;background:#fafafa}
+        .chip b{font-weight:600}
+        .list{display:grid;gap:8px}
+        .muted{color:#666}
+        .split{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+        .badge{display:inline-block;border:1px solid #bbb;border-radius:6px;padding:2px 6px;background:#fafafa;font-size:12px}
+        .danger-btn{border-color:#c1121f;color:#c1121f;background:#fff}
+        .hr{margin:12px 0;border:none;border-top:1px solid #ddd}
+        .section-title{margin:6px 0 2px;font-size:14px}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Схема здания с 3 этажами</h1>
+    <p class="lead">Выберите дату и слот, кликните по аудитории, чтобы <b>назначить группы</b> и <b>отредактировать свойства кабинета</b>. Цвет показывает заполненность.</p>
+
+    <div class="toolbar" role="toolbar" aria-label="Фильтры">
+        <div class="group">
+            <strong>Дата:</strong>
+            <input id="date-input" type="date" />
+        </div>
+
+        <div class="group floor-switch" role="group" aria-label="Выбор этажа">
+            <strong>Этаж:</strong>
+            <button type="button" data-floor="1" class="active" aria-pressed="true">1</button>
+            <button type="button" data-floor="2" aria-pressed="false">2</button>
+            <button type="button" data-floor="3" aria-pressed="false">3</button>
+        </div>
+
+        <div class="group" role="group" aria-label="Выбор слота">
+            <strong>Слот:</strong>
+            <select id="slot-filter" aria-label="Слот времени"></select>
+        </div>
+
+        <div class="group" aria-hidden="false">
+            <span class="badge" style="background:#eee;border-color:#bbb">пусто</span>
+            <span class="badge" style="background:#e8f8ef;border-color:#6ccf96">≤100%</span>
+            <span class="badge" style="background:#fff4cc;border-color:#f2c200">до +25%</span>
+            <span class="badge" style="background:#ffe1e1;border-color:#ff6b6b">до +50%</span>
+            <span class="badge" style="background:#111;color:#fff;border-color:#000">&gt; +50%</span>
+        </div>
+
+        <div class="actions">
+            <a class="btn btn-menu" href="/cabinet/me.html">Личный кабинет</a>
+            <a class="btn" href="/logout">Выход</a>
+        </div>
+    </div>
+
+    <div class="building" aria-label="План этажей">
+        <div class="wings">
+            <!-- Левый корпус -->
+            <section class="wing" aria-label="Левый корпус">
+                <h3>Левый корпус</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 101" data-capacity="30">Ауд. 101 (30)</button>
+                        <button type="button" class="room" data-room="Ауд. 102" data-capacity="25">Ауд. 102 (25)</button>
+                        <button type="button" class="room" data-room="Ауд. 103" data-capacity="40">Ауд. 103 (40)</button>
+                        <button type="button" class="room" data-room="Ауд. 104" data-capacity="28">Ауд. 104 (28)</button>
+                        <button type="button" class="room" data-room="Ауд. 105" data-capacity="35">Ауд. 105 (35)</button>
+                        <button type="button" class="room" data-room="Ауд. 106" data-capacity="22">Ауд. 106 (22)</button>
+                        <button type="button" class="room" data-room="Ауд. 107" data-capacity="32">Ауд. 107 (32)</button>
+                        <button type="button" class="room" data-room="Ауд. 108" data-capacity="27">Ауд. 108 (27)</button>
+                        <button type="button" class="room" data-room="Ауд. 109" data-capacity="40">Ауд. 109 (40)</button>
+                        <button type="button" class="room" data-room="Ауд. 110" data-capacity="36">Ауд. 110 (36)</button>
+                    </div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 201" data-capacity="34">Ауд. 201 (34)</button>
+                        <button type="button" class="room" data-room="Ауд. 202" data-capacity="26">Ауд. 202 (26)</button>
+                        <button type="button" class="room" data-room="Ауд. 203" data-capacity="38">Ауд. 203 (38)</button>
+                        <button type="button" class="room" data-room="Ауд. 204" data-capacity="25">Ауд. 204 (25)</button>
+                        <button type="button" class="room" data-room="Ауд. 205" data-capacity="42">Ауд. 205 (42)</button>
+                        <button type="button" class="room" data-room="Ауд. 206" data-capacity="29">Ауд. 206 (29)</button>
+                        <button type="button" class="room" data-room="Ауд. 207" data-capacity="31">Ауд. 207 (31)</button>
+                        <button type="button" class="room" data-room="Ауд. 208" data-capacity="24">Ауд. 208 (24)</button>
+                        <button type="button" class="room" data-room="Ауд. 209" data-capacity="39">Ауд. 209 (39)</button>
+                        <button type="button" class="room" data-room="Ауд. 210" data-capacity="30">Ауд. 210 (30)</button>
+                    </div>
+                </div>
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 301" data-capacity="28">Ауд. 301 (28)</button>
+                        <button type="button" class="room" data-room="Ауд. 302" data-capacity="33">Ауд. 302 (33)</button>
+                        <button type="button" class="room" data-room="Ауд. 303" data-capacity="40">Ауд. 303 (40)</button>
+                        <button type="button" class="room" data-room="Ауд. 304" data-capacity="23">Ауд. 304 (23)</button>
+                        <button type="button" class="room" data-room="Ауд. 305" data-capacity="35">Ауд. 305 (35)</button>
+                        <button type="button" class="room" data-room="Ауд. 306" data-capacity="21">Ауд. 306 (21)</button>
+                        <button type="button" class="room" data-room="Ауд. 307" data-capacity="27">Ауд. 307 (27)</button>
+                        <button type="button" class="room" data-room="Ауд. 308" data-capacity="37">Ауд. 308 (37)</button>
+                        <button type="button" class="room" data-room="Ауд. 309" data-capacity="41">Ауд. 309 (41)</button>
+                        <button type="button" class="room" data-room="Ауд. 310" data-capacity="30">Ауд. 310 (30)</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Центр -->
+            <section class="wing center" aria-label="Центральная часть">
+                <h3>Центр</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="room foyer" aria-disabled="true" data-room="Фойе" data-capacity="0">Фойе</div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                </div>
+                <div class="floor" data-floor="3">
+                    <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                </div>
+            </section>
+
+            <!-- Правый корпус -->
+            <section class="wing" aria-label="Правый корпус">
+                <h3>Правый корпус</h3>
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 111" data-capacity="28">Ауд. 111 (28)</button>
+                        <button type="button" class="room" data-room="Ауд. 112" data-capacity="26">Ауд. 112 (26)</button>
+                        <button type="button" class="room" data-room="Ауд. 113" data-capacity="32">Ауд. 113 (32)</button>
+                        <button type="button" class="room" data-room="Ауд. 114" data-capacity="24">Ауд. 114 (24)</button>
+                        <button type="button" class="room" data-room="Ауд. 115" data-capacity="39">Ауд. 115 (39)</button>
+                        <button type="button" class="room" data-room="Ауд. 116" data-capacity="21">Ауд. 116 (21)</button>
+                        <button type="button" class="room" data-room="Ауд. 117" data-capacity="33">Ауд. 117 (33)</button>
+                        <button type="button" class="room" data-room="Ауд. 118" data-capacity="27">Ауд. 118 (27)</button>
+                        <button type="button" class="room" data-room="Ауд. 119" data-capacity="42">Ауд. 119 (42)</button>
+                        <button type="button" class="room" data-room="Ауд. 120" data-capacity="34">Ауд. 120 (34)</button>
+                    </div>
+                </div>
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 211" data-capacity="29">Ауд. 211 (29)</button>
+                        <button type="button" class="room" data-room="Ауд. 212" data-capacity="31">Ауд. 212 (31)</button>
+                        <button type="button" class="room" data-room="Ауд. 213" data-capacity="36">Ауд. 213 (36)</button>
+                        <button type="button" class="room" data-room="Ауд. 214" data-capacity="24">Ауд. 214 (24)</button>
+                        <button type="button" class="room" data-room="Ауд. 215" data-capacity="41">Ауд. 215 (41)</button>
+                        <button type="button" class="room" data-room="Ауд. 216" data-capacity="22">Ауд. 216 (22)</button>
+                        <button type="button" class="room" data-room="Ауд. 217" data-capacity="34">Ауд. 217 (34)</button>
+                        <button type="button" class="room" data-room="Ауд. 218" data-capacity="28">Ауд. 218 (28)</button>
+                        <button type="button" class="room" data-room="Ауд. 219" data-capacity="37">Ауд. 219 (37)</button>
+                        <button type="button" class="room" data-room="Ауд. 220" data-capacity="30">Ауд. 220 (30)</button>
+                    </div>
+                </div>
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Ауд. 311" data-capacity="25">Ауд. 311 (25)</button>
+                        <button type="button" class="room" data-room="Ауд. 312" data-capacity="33">Ауд. 312 (33)</button>
+                        <button type="button" class="room" data-room="Ауд. 313" data-capacity="38">Ауд. 313 (38)</button>
+                        <button type="button" class="room" data-room="Ауд. 314" data-capacity="23">Ауд. 314 (23)</button>
+                        <button type="button" class="room" data-room="Ауд. 315" data-capacity="35">Ауд. 315 (35)</button>
+                        <button type="button" class="room" data-room="Ауд. 316" data-capacity="21">Ауд. 316 (21)</button>
+                        <button type="button" class="room" data-room="Ауд. 317" data-capacity="30">Ауд. 317 (30)</button>
+                        <button type="button" class="room" data-room="Ауд. 318" data-capacity="29">Ауд. 318 (29)</button>
+                        <button type="button" class="room" data-room="Ауд. 319" data-capacity="40">Ауд. 319 (40)</button>
+                        <button type="button" class="room" data-room="Ауд. 320" data-capacity="32">Ауд. 320 (32)</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div class="entrance" aria-label="Главный вход">Вход</div>
+</div>
+
+<!-- Drawer -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-labelledby="d-title">
+    <header>
+        <h2 id="d-title">Бронирование</h2>
+        <button type="button" id="d-close" aria-label="Закрыть панель">Закрыть</button>
+    </header>
+    <div class="content">
+        <!-- Бронирование -->
+        <div class="kv"><div>Помещение:</div><div><b id="d-room">—</b></div></div>
+        <div class="kv"><div>Вместимость:</div><div><span id="d-cap"></span></div></div>
+        <div class="kv"><div>Слот:</div><div><span id="d-slot"></span></div></div>
+
+        <div class="kv"><div>Кем занято:</div><div id="d-by" class="muted">—</div></div>
+
+        <div class="hr"></div>
+
+        <div class="kv"><div>Выбрать группы:</div><div id="groups-box" class="list"></div></div>
+        <div class="kv"><div>Текущие:</div><div id="current-chips" class="chips muted">—</div></div>
+        <div class="kv"><div>Загрузка:</div><div id="usage-line" class="muted">0 / 0</div></div>
+
+        <div class="split" style="margin-top:10px">
+            <button type="button" id="save-book" class="btn">Сохранить бронирование</button>
+            <button type="button" id="clear-book" class="btn danger-btn">Снять бронирование</button>
+        </div>
+
+        <!-- Свойства кабинета -->
+        <div class="hr"></div>
+        <h3 class="section-title">Сведения о кабинете</h3>
+
+        <div class="kv">
+            <div>Вместимость:</div>
+            <div><input id="c-cap" type="number" min="0" placeholder="0" style="width:120px"></div>
+        </div>
+
+        <div class="kv">
+            <div>Корпус:</div>
+            <div><select id="c-building" style="max-width:260px"></select></div>
+        </div>
+
+        <div class="kv">
+            <div>Факультеты:</div>
+            <div id="c-faculties" class="list"></div>
+        </div>
+
+        <div class="kv">
+            <div>Специализации:</div>
+            <div id="c-specs" class="list"></div>
+        </div>
+
+        <div class="split" style="margin-top:8px">
+            <button type="button" id="save-room-meta" class="btn">Сохранить кабинет</button>
+        </div>
+    </div>
+</aside>
+
+<script>
+    // ====== CSRF из cookie (Spring Security) ======
+    function getCookie(name){
+      return document.cookie.split('; ').find(row=>row.startsWith(name+'='))?.split('=')[1];
+    }
+    function decode(s){ try { return decodeURIComponent(s); } catch { return s; } }
+    const csrfToken = decode(getCookie('XSRF-TOKEN') || '');
+    const csrfHeader = csrfToken ? {"X-CSRF-TOKEN": csrfToken} : {};
+
+    // ====== состояние ======
+    const slotFilter = document.getElementById('slot-filter');
+    const dateInput  = document.getElementById('date-input');
+    let SLOT_LIST = [];         // [{id, from, to}]
+    let CLASSROOMS = new Map(); // name -> {id, name, capacity}
+    let selectedSlotId = null;
+    let selectedDate = new Date().toISOString().slice(0,10);
+    dateInput.value = selectedDate;
+
+    const ME = { id: null, login: null };
+
+    // roomBookings[name][slotId] = { id?, groups:[{id,name,size}], by:string|null }
+    const roomBookings = {};
+
+    // Справочники для формы кабинета
+    let PREF_FACULTIES = [];
+    let PREF_SPECS = [];
+    let PREF_BUILDINGS = [];
+
+    // ====== справочники ======
+    async function loadMe(){
+      try{
+        const me = await (await fetch('/api/v1/users/me', {credentials:'same-origin'})).json();
+        ME.id = me.id; ME.login = me.login;
+      }catch{ /* гость */ }
+    }
+
+    async function loadSlots() {
+      try{
+        const res = await fetch('/api/slots', {credentials:'same-origin'});
+        if (!res.ok) throw new Error('slots api not ready');
+        const list = await res.json();
+        SLOT_LIST = list.map(s=>{
+          const from = s.from ?? s.startAt ?? null;
+          const to   = s.to   ?? s.endAt   ?? null;
+          return {id: Number(s.id), from, to};
+        });
+        slotFilter.innerHTML = '';
+        SLOT_LIST.forEach(s=>{
+          const o=document.createElement('option');
+          o.value=s.id;
+          o.textContent = (s.from && s.to) ? `${s.from}–${s.to}` : `Слот #${s.id}`;
+          slotFilter.appendChild(o);
+        });
+        selectedSlotId = SLOT_LIST.length ? SLOT_LIST[0].id : null;
+        if (selectedSlotId != null) slotFilter.value = String(selectedSlotId);
+      }catch(e){
+        const FALLBACK = [
+          ['08:00','09:30'], ['09:40','11:10'], ['11:20','12:50'],
+          ['13:20','14:50'], ['15:00','16:30'], ['16:40','18:10'], ['18:20','19:50'],
+        ];
+        SLOT_LIST = FALLBACK.map((p,i)=>({id:i+1, from:p[0], to:p[1]}));
+        slotFilter.innerHTML = '';
+        SLOT_LIST.forEach(s=>{
+          const o=document.createElement('option');
+          o.value=s.id; o.textContent=`${s.from}–${s.to}`;
+          slotFilter.appendChild(o);
+        });
+        selectedSlotId = SLOT_LIST[0].id;
+        slotFilter.value = String(selectedSlotId);
+      }
+    }
+
+    async function loadClassrooms() {
+      try{
+        const res = await fetch('/api/classrooms', {credentials:'same-origin'});
+        if (!res.ok) throw new Error('classrooms api not ready');
+        const list = await res.json(); // [{id,name,capacity}]
+        CLASSROOMS = new Map(list.map(c => [c.name, {id:c.id, name:c.name, capacity:Number(c.capacity||0)}]));
+        document.querySelectorAll('.room').forEach(el=>{
+          const c = CLASSROOMS.get(el.dataset.room);
+          if (c) {
+            el.dataset.classroomId = String(c.id);
+            el.dataset.capacity    = String(c.capacity ?? 0);
+            const base = el.textContent.replace(/\s*\(\d+\)\s*$/,'');
+            el.textContent = `${base} (${c.capacity ?? 0})`;
+          }
+        });
+      }catch(e){
+        console.warn('Не удалось загрузить /api/classrooms. Будет автосоздание через /ensure.');
+      }
+    }
+
+    let ALL_GROUPS = [];
+    async function loadGroups(){
+      try{
+        const res = await fetch('/api/groups', {credentials:'same-origin'});
+        const list = await res.json();
+        ALL_GROUPS = (Array.isArray(list)?list:[]).map(g=>({
+          id: Number(g.id),
+          name: g.name,
+          size: Number((g.size ?? g.capacity ?? g.personsCount) || 0)
+        }));
+      }catch{ ALL_GROUPS = []; }
+    }
+
+    async function preloadForRoomForm(){
+      try { PREF_FACULTIES = await (await fetch('/api/faculties',{credentials:'same-origin'})).json(); } catch { PREF_FACULTIES = []; }
+      try { PREF_SPECS     = await (await fetch('/api/specializations',{credentials:'same-origin'})).json(); } catch { PREF_SPECS = []; }
+      try { PREF_BUILDINGS = await (await fetch('/api/buildings',{credentials:'same-origin'})).json(); } catch { PREF_BUILDINGS = []; }
+
+      const bSel = document.getElementById('c-building');
+      bSel.innerHTML = '<option value="">— не выбрано —</option>' + (PREF_BUILDINGS||[]).map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+
+      const facBox = document.getElementById('c-faculties');
+      facBox.innerHTML = (PREF_FACULTIES||[]).map(f=>(
+        `<label style="display:flex;gap:6px;align-items:center">
+           <input type="checkbox" value="${f.id}"> <span>${escapeHtml(f.name)}</span>
+         </label>`
+      )).join('');
+
+      const specBox = document.getElementById('c-specs');
+      specBox.innerHTML = (PREF_SPECS||[]).map(s=>(
+        `<label style="display:flex;gap:6px;align-items:center">
+           <input type="checkbox" value="${s.id}"> <span>${escapeHtml(s.name)}</span>
+         </label>`
+      )).join('');
+    }
+
+    // ====== утилиты ======
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+    function sumSize(groups){ return groups.reduce((a,g)=>a + (Number(g.size)||0), 0); }
+    function statusBy(capacity, used){
+      if (used <= 0) return 'idle';
+      if (capacity <= 0) return 'ok';
+      const ratio = used / capacity;
+      if (ratio <= 1)    return 'ok';
+      if (ratio <= 1.25) return 'warn';
+      if (ratio <= 1.50) return 'danger';
+      return 'over';
+    }
+    function recolorAll(){
+      document.querySelectorAll('.room').forEach(el=>{
+        if (el.classList.contains('foyer')) return;
+        const cap  = Number(el.dataset.capacity||0);
+        const name = el.dataset.room;
+        const rb   = roomBookings[name]?.[selectedSlotId] || null;
+        const groups = rb?.groups || [];
+        const used   = sumSize(groups);
+        const st     = statusBy(cap, used);
+
+        el.classList.remove('idle','ok','warn','danger','over');
+        el.classList.add(st);
+
+        const who = rb?.by ? `\nЗанято: ${rb.by}` : (groups.length ? '\nЗанято' : '\nСвободно');
+        el.title = `${name}\nВместимость: ${cap}\nНазначено: ${used}${who}`;
+      });
+    }
+
+    // ====== API бронирований ======
+    async function apiCreateBooking({date, slotId, classroomId, groupIds}){
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', ...csrfHeader},
+        credentials:'same-origin',
+        body: JSON.stringify({date, slotId, classroomId, groupIds})
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json(); // ожидаем BookingDto c bookedBy
+    }
+    async function apiDeleteBookingById(id){
+      const res = await fetch(`/api/bookings/${id}`, {method:'DELETE', headers:{...csrfHeader}, credentials:'same-origin'});
+      return res.ok;
+    }
+    async function apiDeleteBookingByKey({date, slotId, classroomId}){
+      const url = `/api/bookings/by-key?date=${encodeURIComponent(date)}&slotId=${slotId}&classroomId=${classroomId}`;
+      const res = await fetch(url, {method:'DELETE', headers: {...csrfHeader}, credentials:'same-origin'});
+      if (!res.ok && res.status !== 404) throw new Error(await res.text());
+    }
+    async function apiLoadBookingsBySlot({date, slotId}){
+      const res = await fetch(`/api/bookings/by-slot?date=${encodeURIComponent(date)}&slotId=${slotId}`, {credentials:'same-origin'});
+      if (!res.ok) return [];
+      return await res.json(); // список BookingDto
+    }
+
+    // ====== API кабинетов ======
+    async function apiEnsureClassroom(name, capacity){
+      const r = await fetch('/api/classrooms/ensure', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json', ...csrfHeader},
+        body: JSON.stringify({ name, capacity })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return await r.json(); // ClassroomDto
+    }
+    async function apiGetClassroom(id){
+      const r = await fetch(`/api/classrooms/${id}`, {credentials:'same-origin'});
+      if (!r.ok) throw new Error('Не удалось загрузить кабинет');
+      return await r.json();
+    }
+    async function apiUpdateClassroom(id, payload){
+      const r = await fetch(`/api/classrooms/${id}`, {
+        method:'PUT', credentials:'same-origin',
+        headers:{'Content-Type':'application/json', ...csrfHeader},
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return await r.json();
+    }
+
+    // ====== Drawer ======
+    const overlay   = document.getElementById('overlay');
+    const drawer    = document.getElementById('drawer');
+    const dClose    = document.getElementById('d-close');
+    const dRoom     = document.getElementById('d-room');
+    const dCapLbl   = document.getElementById('d-cap');
+    const dSlot     = document.getElementById('d-slot');
+    const dBy       = document.getElementById('d-by');
+    const groupsBox = document.getElementById('groups-box');
+    const chips     = document.getElementById('current-chips');
+    const usageLine = document.getElementById('usage-line');
+    const saveBtn   = document.getElementById('save-book');
+    const clearBtn  = document.getElementById('clear-book');
+    const saveMetaBtn = document.getElementById('save-room-meta');
+    let currentRoomEl = null;
+
+    function renderGroupsSelector(selected){
+      groupsBox.innerHTML = '';
+      const selIds = new Set(selected.map(g=>g.id));
+      ALL_GROUPS.forEach(g=>{
+        const row = document.createElement('label');
+        row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px';
+        row.innerHTML = `<input type="checkbox" value="${g.id}" ${selIds.has(g.id)?'checked':''} aria-label="Выбрать группу ${escapeHtml(g.name)}">
+                         <span>${escapeHtml(g.name)}</span>
+                         <span class="muted">(${g.size})</span>`;
+        groupsBox.appendChild(row);
+      });
+    }
+    function renderCurrentChips(selected){
+      chips.innerHTML = selected.length ? '' : '—';
+      selected.forEach(g=>{
+        const div = document.createElement('div');
+        div.className='chip';
+        div.innerHTML = `<b>${escapeHtml(g.name)}</b> <span class="muted">(${g.size})</span>
+                         <button type="button" data-x="${g.id}" aria-label="Убрать ${escapeHtml(g.name)}" style="margin-left:6px;border:none;background:transparent;cursor:pointer">✕</button>`;
+        chips.appendChild(div);
+      });
+    }
+    function calcAndPaintUsage(cap, selected){
+      const used = sumSize(selected);
+      usageLine.textContent = `${used} / ${cap}`;
+    }
+    function getSelectedFromBoxes(){
+      const checked = [...groupsBox.querySelectorAll('input[type="checkbox"]:checked')].map(cb=>Number(cb.value));
+      const map = new Map(ALL_GROUPS.map(g=>[g.id,g]));
+      return checked.map(id=>map.get(id)).filter(Boolean);
+    }
+
+    function fillRoomForm(dto){
+      document.getElementById('c-cap').value = dto.capacity ?? 0;
+      document.getElementById('c-building').value = dto.buildingId ?? '';
+      const facSet = new Set(dto.facultyIds || []);
+      document.querySelectorAll('#c-faculties input[type="checkbox"]').forEach(cb=>{
+        cb.checked = facSet.has(Number(cb.value));
+      });
+      const specSet = new Set(dto.specializationIds || []);
+      document.querySelectorAll('#c-specs input[type="checkbox"]').forEach(cb=>{
+        cb.checked = specSet.has(Number(cb.value));
+      });
+    }
+
+    function collectRoomForm(){
+      const cap = Number(document.getElementById('c-cap').value || 0);
+      const buildingId = document.getElementById('c-building').value ? Number(document.getElementById('c-building').value) : null;
+      const facultyIds = [...document.querySelectorAll('#c-faculties input:checked')].map(cb=>Number(cb.value));
+      const specializationIds = [...document.querySelectorAll('#c-specs input:checked')].map(cb=>Number(cb.value));
+      return { capacity: cap, buildingId, facultyIds, specializationIds };
+    }
+
+    function openDrawer(el){
+      if (!el || el.classList.contains('foyer')) return;
+
+      currentRoomEl = el;
+      const name = el.dataset.room;
+      const cap  = Number(el.dataset.capacity||0);
+      const slotObj = SLOT_LIST.find(s=>s.id===Number(selectedSlotId));
+
+      dRoom.textContent = name;
+      dCapLbl.textContent  = cap;
+      dSlot.textContent = slotObj ? `${slotObj.from ?? ''}–${slotObj.to ?? ''}` : String(selectedSlotId);
+
+      const rb = roomBookings[name]?.[selectedSlotId] || null;
+      dBy.textContent = rb?.by || '—';
+
+      const selected = rb ? [...rb.groups] : [];
+      renderGroupsSelector(selected);
+      renderCurrentChips(selected);
+      calcAndPaintUsage(cap, selected);
+
+      overlay.classList.add('open');
+      drawer.classList.add('open');
+      drawer.setAttribute('aria-hidden','false');
+
+      // если у элемента ещё нет classroomId — получим/создадим по имени
+      (async ()=>{
+        if (!el.dataset.classroomId){
+          try{
+            const dto = await apiEnsureClassroom(name, cap);
+            el.dataset.classroomId = String(dto.id);
+            el.dataset.capacity = String(dto.capacity ?? cap);
+            const base = el.textContent.replace(/\s*\(\d+\)\s*$/,'');
+            el.textContent = `${base} (${dto.capacity ?? cap})`;
+            CLASSROOMS.set(name, {id:dto.id, name, capacity: dto.capacity ?? cap});
+          }catch(e){
+            console.warn('ensure classroom failed', e);
+          }
+        }
+        // заполним форму свойств кабинета из БД
+        if (el.dataset.classroomId){
+          try{ fillRoomForm(await apiGetClassroom(Number(el.dataset.classroomId))); }catch{}
+        }
+      })();
+
+      chips.onclick = (e)=>{
+        const id = Number(e.target?.dataset?.x);
+        if (!id) return;
+        groupsBox.querySelectorAll('input[type="checkbox"]').forEach(cb=>{ if (Number(cb.value)===id) cb.checked = false; });
+        const ns = getSelectedFromBoxes(); renderCurrentChips(ns); calcAndPaintUsage(cap, ns);
+      };
+      groupsBox.onchange = ()=>{
+        const ns = getSelectedFromBoxes(); renderCurrentChips(ns); calcAndPaintUsage(cap, ns);
+      };
+
+      // Сохранение бронирования
+      saveBtn.onclick = async ()=>{
+        const sel = getSelectedFromBoxes();
+        const classroomId = Number(el.dataset.classroomId);
+        if (!classroomId) { alert('Не найден ID аудитории.'); return; }
+        try{
+          const resp = await apiCreateBooking({
+            date: selectedDate,
+            slotId: Number(selectedSlotId),
+            classroomId,
+            groupIds: sel.map(g=>g.id)
+          });
+          const by = ME.login || resp?.bookedBy || '—';
+          if (!roomBookings[name]) roomBookings[name] = {};
+          roomBookings[name][selectedSlotId] = { id: resp?.id, groups: sel, by };
+          recolorAll(); closeDrawer();
+        }catch(err){ alert(err.message || 'Ошибка сохранения'); }
+      };
+
+      // Снятие брони
+      clearBtn.onclick = async ()=>{
+        const classroomId = Number(el.dataset.classroomId);
+        const rb = roomBookings[name]?.[selectedSlotId];
+        try{
+          if (rb?.id && await apiDeleteBookingById(rb.id)){
+            // ok
+          }else{
+            await apiDeleteBookingByKey({date: selectedDate, slotId: Number(selectedSlotId), classroomId});
+          }
+          if (roomBookings[name]) delete roomBookings[name][selectedSlotId];
+          recolorAll(); closeDrawer();
+        }catch(err){ alert(err.message || 'Ошибка удаления'); }
+      };
+
+      // Сохранение свойств кабинета
+      saveMetaBtn.onclick = async ()=>{
+        const classroomId = Number(currentRoomEl?.dataset?.classroomId);
+        if (!classroomId) return alert('Не найден ID аудитории');
+        const payload = collectRoomForm();
+        try{
+          const updated = await apiUpdateClassroom(classroomId, payload);
+          currentRoomEl.dataset.capacity = String(updated.capacity ?? 0);
+          const base = currentRoomEl.textContent.replace(/\s*\(\d+\)\s*$/,'');
+          currentRoomEl.textContent = `${base} (${updated.capacity ?? 0})`;
+          dCapLbl.textContent = updated.capacity ?? 0;
+          CLASSROOMS.set(updated.name, { id: updated.id, name: updated.name, capacity: updated.capacity ?? 0 });
+          recolorAll();
+          alert('Кабинет сохранён');
+        }catch(e){
+          alert(e?.message || 'Не удалось сохранить кабинет');
+        }
+      };
+    }
+
+    function closeDrawer(){
+      overlay.classList.remove('open');
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden','true');
+      currentRoomEl=null;
+    }
+    overlay.addEventListener('click', closeDrawer);
+    dClose.addEventListener('click', closeDrawer);
+
+    // клики по аудиториям
+    document.querySelectorAll('.room').forEach(el=>{
+      if (el.classList.contains('foyer')) return;
+      el.addEventListener('click', ()=>openDrawer(el));
+    });
+
+    // переключатели этажей
+    document.querySelectorAll('.floor-switch button').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.floor-switch button').forEach(b=>{ b.classList.remove('active'); b.setAttribute('aria-pressed','false'); });
+        btn.classList.add('active'); btn.setAttribute('aria-pressed','true');
+        const f=btn.dataset.floor;
+        document.querySelectorAll('.floor').forEach(x=>x.classList.toggle('active', x.dataset.floor===f));
+      });
+    });
+    slotFilter.addEventListener('change', async ()=>{
+      selectedSlotId = Number(slotFilter.value);
+      await reloadBookingsAndPaint();
+    });
+    dateInput.addEventListener('change', async ()=>{
+      selectedDate = dateInput.value || new Date().toISOString().slice(0,10);
+      await reloadBookingsAndPaint();
+    });
+
+    async function reloadBookingsAndPaint(){
+      Object.keys(roomBookings).forEach(k=> roomBookings[k] = {});
+      try{
+        const list = await apiLoadBookingsBySlot({date: selectedDate, slotId: Number(selectedSlotId)});
+        list.forEach(b=>{
+          const roomName = b.classroomName || [...CLASSROOMS.values()].find(c=>c.id===b.classroomId)?.name;
+          if (!roomName) return;
+          if (!roomBookings[roomName]) roomBookings[roomName] = {};
+          const groups = (b.groups || []).map(g=>({id:g.id, name:g.name, size:Number(g.size ?? g.capacity ?? g.personsCount ?? 0)}));
+          const by = b.bookedBy || b.createdByName || b.createdByLogin || null;
+          roomBookings[roomName][selectedSlotId] = { id: b.id, groups, by };
+        });
+      }catch(e){
+        console.warn('Не удалось загрузить бронирования по слоту:', e);
+      }
+      recolorAll();
+    }
+
+    // ====== init ======
+    (async function init(){
+      await loadMe();
+      await preloadForRoomForm();
+      await loadSlots();
+      await loadClassrooms();
+      await loadGroups();
+      await reloadBookingsAndPaint();
+    })();
+</script>
+</body>
+</html>

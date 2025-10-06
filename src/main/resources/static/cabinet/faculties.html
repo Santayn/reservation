@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Создать факультет — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        async function loadFaculties(){
+          const box = qs('#faculties-list');
+          const err = qs('#faculties-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const list = await jfetch('/api/faculties', {credentials:'same-origin'});
+            if (!Array.isArray(list) || list.length === 0){
+              box.innerHTML = '<div class="muted">Пока нет факультетов</div>';
+              return;
+            }
+            // header
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Название</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            list.forEach(f=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.dataset.id = f.id;
+              row.innerHTML = `
+                <div>#${f.id}</div>
+                <div><b>${escapeHtml(f.name)}</b></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${f.id}" title="Удалить факультет #${f.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            toastErr(err, e?.message || 'Ошибка загрузки списка');
+          }
+        }
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;')
+            .replaceAll('<','&lt;')
+            .replaceAll('>','&gt;')
+            .replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function createFaculty(){
+          clearAlerts();
+          const err = qs('#fac-error'), ok = qs('#fac-ok');
+          const nameInput = qs('#f-name');
+          const btn = qs('#btn-create-faculty');
+
+          const name = nameInput.value.trim();
+          if (!name) return toastErr(err, 'Укажите название факультета');
+
+          btn.disabled = true;
+          const prevText = btn.textContent;
+          btn.textContent = 'Создаём...';
+
+          try{
+            const dto = await jfetch('/api/faculties', {
+              credentials:'same-origin',
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ name })
+            });
+            toastOK(ok, `Факультет создан (id=${dto.id})`);
+            nameInput.value = '';
+            await loadFaculties();
+          }catch(e){
+            // Возможная ошибка уникальности имени (409/400)
+            const msg = (e && e.message) ? e.message : 'Не удалось создать факультет';
+            toastErr(err, msg);
+          }finally{
+            btn.disabled = false;
+            btn.textContent = prevText;
+          }
+        }
+
+        async function deleteFaculty(id){
+          const err = qs('#faculties-error'), ok = qs('#faculties-ok');
+          clearAlerts();
+          try{
+            await jfetch(`/api/faculties/${id}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(ok, `Факультет #${id} удалён`);
+            await loadFaculties();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить факультет #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('faculties');
+
+          // submit кнопкой
+          qs('#btn-create-faculty').addEventListener('click', createFaculty);
+
+          // submit клавишей Enter
+          qs('#f-name').addEventListener('keydown', (e)=>{
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              createFaculty();
+            }
+          });
+
+          // Делегирование: клики по кнопкам удаления
+          qs('#faculties-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if(!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить факультет #${id}? Это действие необратимо.`)){
+              deleteFaculty(id);
+            }
+          });
+
+          await loadFaculties();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Создать факультет</h2>
+        <div id="fac-error" class="alert error hidden"></div>
+        <div id="fac-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="f-name">Название факультета*</label>
+                <input id="f-name" placeholder="Например, ФКТИ" autocomplete="off"/>
+            </div>
+        </div>
+
+        <button id="btn-create-faculty" class="btn primary">Создать</button>
+        <div class="hint">POST <code>/api/faculties</code> → {"name": "ФКТИ"}</div>
+    </section>
+
+    <section class="card">
+        <h2>Список факультетов</h2>
+        <div id="faculties-error" class="alert error hidden"></div>
+        <div id="faculties-ok" class="alert ok hidden"></div>
+        <div id="faculties-list"></div>
+        <div class="hint">DELETE <code>/api/faculties/{id}</code></div>
+    </section>
+</main>
+</body>
+</html>
