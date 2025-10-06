@@ -81,7 +81,7 @@ public class BookingService {
         bookingRepo.deleteById(id);
     }
 
-    // ---------- helpers ----------
+    // ---------- helpers.js ----------
 
     private BookingResponse toResponse(Booking b) {
         var groups = b.getGroups().stream()

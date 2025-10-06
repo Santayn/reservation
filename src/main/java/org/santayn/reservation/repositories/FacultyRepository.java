@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface FacultyRepository extends JpaRepository<Faculty, Long> {
     Optional<Faculty> findByName(String name);
     boolean existsByName(String name);
+    boolean existsByNameIgnoreCase(String name);
+    Optional<Faculty> findByNameIgnoreCase(String name);
 }

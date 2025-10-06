@@ -104,7 +104,7 @@ public class ClassroomService {
         return toDto(c);
     }
 
-    // ---------- helpers ----------
+    // ---------- helpers.js ----------
 
     private ClassroomDto toDto(Classroom c) {
         Long buildingId = c.getBuilding() != null ? c.getBuilding().getId() : null;

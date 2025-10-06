@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Корпуса — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {
+          injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts,
+          listBuildings, createBuilding, deleteBuilding
+        } from '/cabinet/js/api.js';
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function loadList(){
+          const box = qs('#b-list');
+          const err = qs('#b-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const items = await listBuildings();
+            if (!Array.isArray(items) || items.length === 0){
+              box.innerHTML = '<div class="muted">Пока пусто</div>';
+              return;
+            }
+            // header
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Название</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            items.forEach(b=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${b.id}</div>
+                <div><b>${escapeHtml(b.name)}</b></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${b.id}" title="Удалить #${b.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            toastErr(err, e?.message || 'Ошибка загрузки списка');
+          }
+        }
+
+        async function onCreate(){
+          clearAlerts();
+          const err = qs('#b-error'), ok = qs('#b-ok');
+          const input = qs('#b-name');
+          const btn = qs('#btn-add-building');
+          const name = input.value.trim();
+          if (!name) return toastErr(err, 'Укажите название корпуса');
+
+          const prev = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Добавляю...';
+          try{
+            await createBuilding(name);
+            toastOK(ok, 'Корпус добавлён');
+            input.value = '';
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось создать корпус');
+          }finally{
+            btn.disabled = false; btn.textContent = prev;
+          }
+        }
+
+        async function onDelete(id){
+          const err = qs('#b-error'), ok = qs('#b-ok');
+          clearAlerts();
+          try{
+            await deleteBuilding(id);
+            toastOK(ok, `Удалено (#${id})`);
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('buildings');
+
+          qs('#btn-add-building').addEventListener('click', onCreate);
+          qs('#b-name').addEventListener('keydown', (e)=>{
+            if (e.key === 'Enter'){ e.preventDefault(); onCreate(); }
+          });
+
+          qs('#b-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if (!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить корпус #${id}?`)) onDelete(id);
+          });
+
+          await loadList();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Корпуса</h2>
+        <div id="b-error" class="alert error hidden"></div>
+        <div id="b-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="b-name">Название корпуса*</label>
+                <input id="b-name" placeholder="Например, Корпус №1"/>
+            </div>
+        </div>
+
+        <button id="btn-add-building" class="btn primary">Добавить</button>
+        <div class="hint">GET <code>/api/buildings</code> · POST <code>/api/buildings</code> · DELETE <code>/api/buildings/{id}</code></div>
+    </section>
+
+    <section class="card">
+        <h2>Список корпусов</h2>
+        <div id="b-list"></div>
+    </section>
+</main>
+</body>
+</html>

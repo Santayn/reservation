@@ -34,7 +34,7 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login.html")
                         .loginProcessingUrl("/login")
-                        .defaultSuccessUrl("/app/mainmenu.html", true) // всегда в главное меню
+                        .defaultSuccessUrl("/app/plan.html", true) // всегда в главное меню
                         .failureUrl("/login.html?error")
                         .permitAll()
                 )

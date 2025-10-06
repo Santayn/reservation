@@ -29,3 +29,45 @@ export async function injectSidebar(activePage){
   const a = el.querySelector(`[data-page="${activePage}"]`);
   if (a) a.classList.add('active');
 }
+
+// ====== NEW: Specializations API ======
+export async function listSpecializations(){
+  return jfetch('/api/specializations', { credentials:'same-origin' });
+}
+
+export async function createSpecialization(name){
+  return jfetch('/api/specializations', {
+    credentials:'same-origin',
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name })
+  });
+}
+
+export async function deleteSpecialization(id){
+  return jfetch(`/api/specializations/${id}`, {
+    credentials:'same-origin',
+    method:'DELETE'
+  });
+}
+
+// ====== NEW: Buildings API ======
+export async function listBuildings(){
+  return jfetch('/api/buildings', { credentials:'same-origin' });
+}
+
+export async function createBuilding(name){
+  return jfetch('/api/buildings', {
+    credentials:'same-origin',
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ name })
+  });
+}
+
+export async function deleteBuilding(id){
+  return jfetch(`/api/buildings/${id}`, {
+    credentials:'same-origin',
+    method:'DELETE'
+  });
+}

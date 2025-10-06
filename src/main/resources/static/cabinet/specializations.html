@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Специализации — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {
+          injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts,
+          listSpecializations, createSpecialization, deleteSpecialization
+        } from '/cabinet/js/api.js';
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function loadList(){
+          const box = qs('#s-list');
+          const err = qs('#s-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const items = await listSpecializations();
+            if (!Array.isArray(items) || items.length === 0){
+              box.innerHTML = '<div class="muted">Пока пусто</div>';
+              return;
+            }
+            // header
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Название</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            items.forEach(s=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${s.id}</div>
+                <div><b>${escapeHtml(s.name)}</b></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${s.id}" title="Удалить #${s.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            toastErr(err, e?.message || 'Ошибка загрузки списка');
+          }
+        }
+
+        async function onCreate(){
+          clearAlerts();
+          const err = qs('#s-error'), ok = qs('#s-ok');
+          const input = qs('#s-name');
+          const btn = qs('#btn-add-specialization');
+          const name = input.value.trim();
+          if (!name) return toastErr(err, 'Укажите название специализации');
+
+          const prev = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Добавляю...';
+          try{
+            await createSpecialization(name);
+            toastOK(ok, 'Специализация добавлена');
+            input.value = '';
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось создать специализацию');
+          }finally{
+            btn.disabled = false; btn.textContent = prev;
+          }
+        }
+
+        async function onDelete(id){
+          const err = qs('#s-error'), ok = qs('#s-ok');
+          clearAlerts();
+          try{
+            await deleteSpecialization(id);
+            toastOK(ok, `Удалено (#${id})`);
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('specializations');
+
+          // submit кнопкой
+          qs('#btn-add-specialization').addEventListener('click', onCreate);
+
+          // Enter-submit
+          qs('#s-name').addEventListener('keydown', (e)=>{
+            if (e.key === 'Enter'){ e.preventDefault(); onCreate(); }
+          });
+
+          // Делегирование удаления
+          qs('#s-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if (!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить специализацию #${id}?`)) onDelete(id);
+          });
+
+          await loadList();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Специализации</h2>
+        <div id="s-error" class="alert error hidden"></div>
+        <div id="s-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="s-name">Название специализации*</label>
+                <input id="s-name" placeholder="Например, Информационные системы"/>
+            </div>
+        </div>
+
+        <button id="btn-add-specialization" class="btn primary">Добавить</button>
+        <div class="hint">GET <code>/api/specializations</code> · POST <code>/api/specializations</code> · DELETE <code>/api/specializations/{id}</code></div>
+    </section>
+
+    <section class="card">
+        <h2>Список специализаций</h2>
+        <div id="s-list"></div>
+    </section>
+</main>
+</body>
+</html>
