@@ -8,9 +8,15 @@ import java.time.LocalDate;
 import java.util.List;
 
 // src/main/java/org/santayn/reservation/web/dto/booking/BookingCreateRequest.java
+// org.santayn.reservation.web.dto.booking.BookingCreateRequest
 public record BookingCreateRequest(
-        @NotNull @JsonFormat(pattern = "yyyy-MM-dd") LocalDate date,
-        @NotNull Long slotId,
-        @NotNull Long classroomId,
-        @NotEmpty List<Long> groupIds   // <-- было List<Integer>
+        LocalDate date,
+        Long slotId,
+        Long classroomId,
+        List<Long> groupIds,
+
+        // НОВОЕ — необязательные
+        String scheduleMode,        // "WEEKLY" | "PARITY"
+        String scheduleWeekParity,  // "EVEN" | "ODD" | null
+        Integer scheduleDayOfWeek   // 1..7
 ) {}

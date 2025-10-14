@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Схема здания с этажами</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="wrap">
+    <h1>Схема здания с 3 этажами</h1>
+    <p class="lead">Переключай карту по временному слоту, чтобы видеть свободные аудитории. Бронированные подсвечиваются светло-красным.</p>
+
+    <div class="toolbar">
+        <div class="group floor-switch" aria-label="Этажи">
+            <strong>Этаж:</strong>
+            <button data-floor="1" class="active">1</button>
+            <button data-floor="2">2</button>
+            <button data-floor="3">3</button>
+        </div>
+        <div class="group" aria-label="Слот времени">
+            <strong>Слот:</strong>
+            <select id="slot-filter"></select>
+        </div>
+        <div class="legend" aria-hidden="true">
+            <span><em class="free"></em> Свободно</span>
+            <span><em class="busy"></em> Занято</span>
+        </div>
+    </div>
+
+    <div class="building">
+        <div class="wings">
+            <!-- Левое крыло -->
+            <section class="wing left">
+                <h3>Левый корпус</h3>
+
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 101">Ауд. 101</div><div class="room" data-room="Ауд. 102">Ауд. 102</div>
+                        <div class="room" data-room="Ауд. 103">Ауд. 103</div><div class="room" data-room="Ауд. 104">Ауд. 104</div>
+                        <div class="room" data-room="Ауд. 105">Ауд. 105</div><div class="room" data-room="Ауд. 106">Ауд. 106</div>
+                        <div class="room" data-room="Ауд. 107">Ауд. 107</div><div class="room" data-room="Ауд. 108">Ауд. 108</div>
+                        <div class="room" data-room="Ауд. 109">Ауд. 109</div><div class="room" data-room="Ауд. 110">Ауд. 110</div>
+                    </div>
+                </div>
+
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 201">Ауд. 201</div><div class="room" data-room="Ауд. 202">Ауд. 202</div>
+                        <div class="room" data-room="Ауд. 203">Ауд. 203</div><div class="room" data-room="Ауд. 204">Ауд. 204</div>
+                        <div class="room" data-room="Ауд. 205">Ауд. 205</div><div class="room" data-room="Ауд. 206">Ауд. 206</div>
+                        <div class="room" data-room="Ауд. 207">Ауд. 207</div><div class="room" data-room="Ауд. 208">Ауд. 208</div>
+                        <div class="room" data-room="Ауд. 209">Ауд. 209</div><div class="room" data-room="Ауд. 210">Ауд. 210</div>
+                    </div>
+                </div>
+
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 301">Ауд. 301</div><div class="room" data-room="Ауд. 302">Ауд. 302</div>
+                        <div class="room" data-room="Ауд. 303">Ауд. 303</div><div class="room" data-room="Ауд. 304">Ауд. 304</div>
+                        <div class="room" data-room="Ауд. 305">Ауд. 305</div><div class="room" data-room="Ауд. 306">Ауд. 306</div>
+                        <div class="room" data-room="Ауд. 307">Ауд. 307</div><div class="room" data-room="Ауд. 308">Ауд. 308</div>
+                        <div class="room" data-room="Ауд. 309">Ауд. 309</div><div class="room" data-room="Ауд. 310">Ауд. 310</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Центр -->
+            <section class="wing center">
+                <h3>Центр</h3>
+
+                <div class="floor active" data-floor="1">
+                    <div class="room static">Фойе</div>
+                </div>
+
+                <div class="floor" data-floor="2">
+                    <button class="room" data-room="Лекционная аудитория">Лекционная аудитория</button>
+                </div>
+
+                <div class="floor" data-floor="3">
+                    <button class="room" data-room="Лекционная аудитория">Лекционная аудитория</button>
+                </div>
+            </section>
+
+            <!-- Правое крыло -->
+            <section class="wing right">
+                <h3>Правый корпус</h3>
+
+                <div class="floor active" data-floor="1">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 111">Ауд. 111</div><div class="room" data-room="Ауд. 112">Ауд. 112</div>
+                        <div class="room" data-room="Ауд. 113">Ауд. 113</div><div class="room" data-room="Ауд. 114">Ауд. 114</div>
+                        <div class="room" data-room="Ауд. 115">Ауд. 115</div><div class="room" data-room="Ауд. 116">Ауд. 116</div>
+                        <div class="room" data-room="Ауд. 117">Ауд. 117</div><div class="room" data-room="Ауд. 118">Ауд. 118</div>
+                        <div class="room" data-room="Ауд. 119">Ауд. 119</div><div class="room" data-room="Ауд. 120">Ауд. 120</div>
+                    </div>
+                </div>
+
+                <div class="floor" data-floor="2">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 211">Ауд. 211</div><div class="room" data-room="Ауд. 212">Ауд. 212</div>
+                        <div class="room" data-room="Ауд. 213">Ауд. 213</div><div class="room" data-room="Ауд. 214">Ауд. 214</div>
+                        <div class="room" data-room="Ауд. 215">Ауд. 215</div><div class="room" data-room="Ауд. 216">Ауд. 216</div>
+                        <div class="room" data-room="Ауд. 217">Ауд. 217</div><div class="room" data-room="Ауд. 218">Ауд. 218</div>
+                        <div class="room" data-room="Ауд. 219">Ауд. 219</div><div class="room" data-room="Ауд. 220">Ауд. 220</div>
+                    </div>
+                </div>
+
+                <div class="floor" data-floor="3">
+                    <div class="rooms">
+                        <div class="room" data-room="Ауд. 311">Ауд. 311</div><div class="room" data-room="Ауд. 312">Ауд. 312</div>
+                        <div class="room" data-room="Ауд. 313">Ауд. 313</div><div class="room" data-room="Ауд. 314">Ауд. 314</div>
+                        <div class="room" data-room="Ауд. 315">Ауд. 315</div><div class="room" data-room="Ауд. 316">Ауд. 316</div>
+                        <div class="room" data-room="Ауд. 317">Ауд. 317</div><div class="room" data-room="Ауд. 318">Ауд. 318</div>
+                        <div class="room" data-room="Ауд. 319">Ауд. 319</div><div class="room" data-room="Ауд. 320">Ауд. 320</div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div class="entrance">Вход</div>
+</div>
+
+<!-- Оверлей и выезжающее окно -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-labelledby="drawer-title">
+    <header>
+        <h2 id="drawer-title">Бронирование</h2>
+        <button class="close" id="drawer-close" aria-label="Закрыть">Закрыть</button>
+    </header>
+    <div class="content">
+        <div><strong>Помещение:</strong> <span id="room-name">—</span></div>
+        <div style="margin-top:10px"><strong>Доступные слоты (1.5ч):</strong></div>
+        <div class="slots" id="slots"></div>
+        <p style="margin-top:10px"><small>График: с 08:00 до 20:00; между парами 10 минут, обеденная пауза 12:50–13:20.</small></p>
+    </div>
+</aside>
+
+<script src="app.js"></script>
+</body>
+</html>

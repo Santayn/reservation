@@ -9,12 +9,15 @@
 <body>
 <div class="wrap">
     <h1>Схема здания с 3 этажами</h1>
-    <p class="lead">Выберите дату и слот, затем кликните по аудитории, чтобы назначить группы и отредактировать свойства кабинета.</p>
+    <p class="lead">Выберите дату и слот для разовой брони или задайте параметры серии (режим, неделя, день, тайм-зона), затем кликните по аудитории.</p>
 
     <div class="toolbar" role="toolbar" aria-label="Фильтры">
+        <!-- ДАТА: диапазон (для разовых броней и просмотра) -->
         <div class="group">
             <strong>Дата:</strong>
-            <input id="date-input" type="date" />
+            <input id="date-input" type="date" aria-label="Дата начала" />
+            <span style="margin:0 6px">—</span>
+            <input id="date-end-input" type="date" aria-label="Дата окончания" />
         </div>
 
         <div class="group floor-switch" role="group" aria-label="Выбор этажа">
@@ -24,9 +27,52 @@
             <button type="button" data-floor="3" aria-pressed="false">3</button>
         </div>
 
+        <!-- Слот нужен для разовых броней (серии его не используют) -->
         <div class="group" role="group" aria-label="Выбор слота">
             <strong>Слот:</strong>
             <select id="slot-filter" aria-label="Слот времени"></select>
+        </div>
+
+        <!-- МИНИ-ПАНЕЛЬ СЕРИИ: режим, тип недели, день недели, тайм-зона -->
+        <div class="group" role="group" aria-label="Параметры серии">
+            <strong>Серия:</strong>
+            <label style="margin-left:6px;">
+                <input type="radio" name="sch-mode" id="sch-mode-weekly" checked> каждую неделю
+            </label>
+            <label style="margin-left:10px;">
+                <input type="radio" name="sch-mode" id="sch-mode-parity"> чёт/нечёт
+            </label>
+
+            <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
+                <!-- наполняется schedule-panel.js: STABLE/EVEN/ODD -->
+            </select>
+
+            <label style="margin-left:10px;"><strong>День:</strong></label>
+            <select id="sch-day" style="min-width:180px" aria-label="День недели">
+                <!-- наполняется schedule-panel.js при необходимости -->
+            </select>
+
+            <label style="margin-left:10px;"><strong>TZ:</strong></label>
+            <input id="sch-tz" type="text" style="min-width:220px" aria-label="Тайм-зона" placeholder="Europe/Vienna">
+        </div>
+
+        <!-- КНОПКА ФИЛЬТР + МЕНЮ (как было) -->
+        <div class="group filter-wrap">
+            <button id="filter-btn" type="button">Фильтр</button>
+            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
+                <div class="row">
+                    <div>Факультет:</div>
+                    <div><select id="flt-faculty"></select></div>
+                </div>
+                <div class="row">
+                    <div>Специализация:</div>
+                    <div><select id="flt-spec"></select></div>
+                </div>
+                <div class="actions">
+                    <button type="button" id="flt-apply">Применить</button>
+                    <button type="button" id="flt-clear">Сбросить</button>
+                </div>
+            </div>
         </div>
 
         <div class="group" aria-hidden="false">
@@ -44,6 +90,7 @@
         </div>
     </div>
 
+    <!-- план здания (как был) -->
     <div class="building" aria-label="План этажей">
         <div class="wings">
             <!-- Левый корпус -->
@@ -169,7 +216,7 @@
     <div class="content">
         <div class="kv"><div>Помещение:</div><div><b id="d-room">—</b></div></div>
         <div class="kv"><div>Вместимость:</div><div><span id="d-cap"></span></div></div>
-        <div class="kv"><div>Слот:</div><div><span id="d-slot"></span></div></div>
+        <div class="kv"><div>Сlot:</div><div><span id="d-slot"></span></div></div>
         <div class="kv"><div>Кем занято:</div><div id="d-by" class="muted">—</div></div>
 
         <div class="hr"></div>
@@ -181,22 +228,16 @@
         <div class="split" style="margin-top:10px">
             <button type="button" id="save-book" class="btn">Сохранить бронирование</button>
             <button type="button" id="clear-book" class="btn danger-btn">Снять бронирование</button>
+            <!-- долгосрочное бронирование -->
+            <button type="button" id="save-series" class="btn" style="background:#1b6; border-color:#1b6">Создать серию</button>
         </div>
 
         <div class="hr"></div>
         <h3 class="section-title">Сведения о кабинете</h3>
         <div class="kv"><div>Вместимость:</div><div><input id="c-cap" type="number" min="0" placeholder="0" style="width:120px"></div></div>
         <div class="kv"><div>Корпус:</div><div><select id="c-building" style="max-width:260px"></select></div></div>
-
-        <!-- ВЫПАДАЮЩИЕ (single) -->
-        <div class="kv">
-            <div>Факультет:</div>
-            <div><select id="c-faculty" style="max-width:260px"></select></div>
-        </div>
-        <div class="kv">
-            <div>Специализация:</div>
-            <div><select id="c-spec" style="max-width:260px"></select></div>
-        </div>
+        <div class="kv"><div>Факультет:</div><div><select id="c-faculty" style="max-width:260px"></select></div></div>
+        <div class="kv"><div>Специализация:</div><div><select id="c-spec" style="max-width:260px"></select></div></div>
 
         <div class="split" style="margin-top:8px">
             <button type="button" id="save-room-meta" class="btn">Сохранить кабинет</button>
@@ -205,6 +246,31 @@
 </aside>
 
 <script src="/app/components/room-drawer.js"></script>
+<!-- теперь ПОДКЛЮЧАЕМ обновлённую мини-панель серии -->
+<script src="/app/components/schedule-panel.js"></script>
 <script src="/app/plan-page.js"></script>
+
+<script>
+    // Пример инициализации панели и передачи её значений в ваш плановый JS:
+    // Это не ломает текущую логику, просто даёт доступ к параметрам серии.
+    (function(){
+      const panel = new window.SchedulePanel();
+      // где-то в plan-page.js вы можете прочитать window.__seriesFilter (или подписаться)
+      panel.setContext({
+        onChange: (v) => { window.__seriesFilter = v; }
+      });
+      // при клике «Создать серию» ваш JS может отправлять:
+      // POST /api/booking-series  с телом:
+      // {
+      //   classroomId: <id выбранной аудитории>,
+      //   groupId: <выбранная группа>,
+      //   timezone: window.__seriesFilter.timezone,
+      //   floor: window.__seriesFilter.floor,
+      //   dayOfWeek: window.__seriesFilter.dayOfWeek,
+      //   scheduleType: window.__seriesFilter.scheduleType,
+      //   weekType: window.__seriesFilter.weekType
+      // }
+    })();
+</script>
 </body>
 </html>

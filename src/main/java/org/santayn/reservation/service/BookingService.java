@@ -62,6 +62,35 @@ public class BookingService {
         return toResponse(booking);
     }
 
+    @Transactional
+    public BookingResponse createSlot(BookingCreateRequest r, Principal principal) {
+        var date = r.date();
+        var slot = slotRepo.findById(r.slotId())
+                .orElseThrow(() -> new NotFoundException("Slot not found: " + r.slotId()));
+        var room = classroomRepo.findById(r.classroomId())
+                .orElseThrow(() -> new NotFoundException("Classroom not found: " + r.classroomId()));
+
+        var booking = bookingRepo.findByDateAndSlot_IdAndClassroom_Id(date, r.slotId(), r.classroomId())
+                .orElseGet(() -> {
+                    var b = new Booking();
+                    b.setDate(date);
+                    b.setSlot(slot);
+                    b.setClassroom(room);
+                    b.setCreatedAt(LocalDateTime.now());
+                    if (principal != null) {
+                        userRepo.findByLogin(principal.getName()).ifPresent(b::setCreatedBy);
+                    }
+                    return b;
+                });
+
+        // r.groupIds() — List<Long>
+        var groups = new HashSet<Group>(groupRepo.findAllById(r.groupIds()));
+        booking.setGroups(groups);
+
+        booking = bookingRepo.save(booking);
+        return toResponse(booking);
+    }
+
     @Transactional(readOnly = true)
     public List<BookingResponse> bySlot(LocalDate date, Long slotId) {
         return bookingRepo.findAllByDateAndSlot_Id(date, slotId)
