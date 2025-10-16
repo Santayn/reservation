@@ -24,17 +24,16 @@ export async function jfetch(url, options={}){
 export async function injectSidebar(activePage){
   const el = document.getElementById('sidebar');
   if (!el) return;
-  const html = await fetch('/cabinet/partials/sidebar.html').then(r=>r.text());
+  const html = await fetch('/cabinet/partials/sidebar.html', { credentials:'same-origin' }).then(r=>r.text());
   el.innerHTML = html;
   const a = el.querySelector(`[data-page="${activePage}"]`);
   if (a) a.classList.add('active');
 }
 
-// ====== NEW: Specializations API ======
+// ====== Specializations API ======
 export async function listSpecializations(){
   return jfetch('/api/specializations', { credentials:'same-origin' });
 }
-
 export async function createSpecialization(name){
   return jfetch('/api/specializations', {
     credentials:'same-origin',
@@ -43,7 +42,6 @@ export async function createSpecialization(name){
     body: JSON.stringify({ name })
   });
 }
-
 export async function deleteSpecialization(id){
   return jfetch(`/api/specializations/${id}`, {
     credentials:'same-origin',
@@ -51,11 +49,10 @@ export async function deleteSpecialization(id){
   });
 }
 
-// ====== NEW: Buildings API ======
+// ====== Buildings API ======
 export async function listBuildings(){
   return jfetch('/api/buildings', { credentials:'same-origin' });
 }
-
 export async function createBuilding(name){
   return jfetch('/api/buildings', {
     credentials:'same-origin',
@@ -64,9 +61,38 @@ export async function createBuilding(name){
     body: JSON.stringify({ name })
   });
 }
-
 export async function deleteBuilding(id){
   return jfetch(`/api/buildings/${id}`, {
+    credentials:'same-origin',
+    method:'DELETE'
+  });
+}
+
+// ====== Schedule Slots API (UI -> HH:mm) ======
+const toIsoTime = (hhmm) => {
+  const t = String(hhmm || '').trim();
+  if (!/^\d{2}:\d{2}$/.test(t)) throw new Error('Неверный формат времени (HH:mm)');
+  return `1970-01-01T${t}:00`;
+};
+
+export async function listSlots(){
+  // поддерживаем как массив, так и {content:[...]}
+  const data = await jfetch('/api/schedule/slots', { credentials:'same-origin' });
+  return Array.isArray(data) ? data : (Array.isArray(data?.content) ? data.content : []);
+}
+
+export async function createSlot(startHHMM, endHHMM){
+  const body = { startAt: toIsoTime(startHHMM), endAt: toIsoTime(endHHMM) };
+  return jfetch('/api/schedule/slots', {
+    credentials:'same-origin',
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+}
+
+export async function deleteSlot(id){
+  return jfetch(`/api/schedule/slots/${id}`, {
     credentials:'same-origin',
     method:'DELETE'
   });

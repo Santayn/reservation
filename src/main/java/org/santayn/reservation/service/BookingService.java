@@ -3,7 +3,6 @@ package org.santayn.reservation.service;
 import java.util.List;
 import java.util.Optional;
 import org.santayn.reservation.models.booking.Booking;
-
 import org.santayn.reservation.repositories.BookingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +39,7 @@ public class BookingService {
         existing.setDayOfWeek(updated.getDayOfWeek());
         existing.setFloor(updated.getFloor());
         existing.setWeekParityType(updated.getWeekParityType());
-        existing.setTimeZoneId(updated.getTimeZoneId());
+        existing.setSlotId(updated.getSlotId());
         existing.setClassroomId(updated.getClassroomId());
         existing.setGroupId(updated.getGroupId());
         return bookingRepository.save(existing);

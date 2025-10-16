@@ -1,5 +1,5 @@
 // plan-page.js
-// Подсветка заполняемости аудиторий + вся инициализация страницы.
+// Подсветка заполняемости аудиторий + инициализация (слоты только из БД).
 
 (function () {
   "use strict";
@@ -13,15 +13,36 @@
     } else cb();
   }
 
+  // Кэш групп для подсчёта людей
+  const groupsCache = { byId: new Map(), loaded: false };
+
+  async function loadGroups() {
+    if (groupsCache.loaded) return;
+    try {
+      const r = await fetch("/api/groups?size=1000");
+      if (!r.ok) throw 0;
+      const data = await r.json();
+      const arr = Array.isArray(data) ? data : (Array.isArray(data.content) ? data.content : []);
+      groupsCache.byId = new Map(
+        arr.map(g => [ Number(g.id), { id: g.id, personsCount: Number(g.personsCount ?? 0) } ])
+      );
+      groupsCache.loaded = true;
+    } catch {
+      groupsCache.byId = new Map();
+      groupsCache.loaded = true;
+    }
+  }
+
   ready(async () => {
     window.SchedulePanel?.init?.();
     initFloorSwitch();
     initFilterMenu();
-    await initSlots();
+    await initSlots();            // ← тянем только из БД
     initDates();
     initRooms();
+    await loadGroups();           // нужно для подсчёта людей
     attachRefreshHandlers();
-    refreshOccupancy(); // первичная заливка
+    refreshOccupancy();
   });
 
   // ===== Этажи =====
@@ -40,33 +61,44 @@
     buttons.forEach(b => b.addEventListener("click", () => setFloor(b.dataset.floor)));
   }
 
-  // ===== Слоты =====
+  // ===== Слоты (только БД) =====
   async function initSlots() {
     const select = $("#slot-filter");
-    const slots = await loadSlotsWithFallback();
-    fillSelect(select, slots.map(s => ({ value: String(s.id), label: s.label })));
+    const slots = await loadSlotsFromApi(); // может вернуть пусто
+    if (slots.length) {
+      fillSelect(select, slots.map(s => ({ value: String(s.id), label: s.label })));
+      select.disabled = false;
+    } else {
+      // если нет слотов — показываем заглушку в UI и блокируем селект
+      select.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— нет слотов —";
+      select.appendChild(opt);
+      select.disabled = true;
+    }
+    select?.addEventListener("change", refreshOccupancy);
   }
 
-  async function loadSlotsWithFallback() {
-    try {
-      const r = await fetch("/api/schedule/slots");
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data) && data.length) {
-          return data.map(s => ({
-            id: s.id ?? s.slotId ?? s.slot_id ?? Math.random(),
-            label: s.title || s.name || `${(s.start || "??")}–${(s.end || "??")}`
-          }));
-        }
-      }
-    } catch {}
-    return [
-      { id: 1, label: "08:30 – 10:00" },
-      { id: 2, label: "10:10 – 11:40" },
-      { id: 3, label: "11:50 – 13:20" },
-      { id: 4, label: "14:00 – 15:30" },
-      { id: 5, label: "15:40 – 17:10" }
-    ];
+  async function loadSlotsFromApi() {
+    const r = await fetch("/api/schedule/slots");
+    if (!r.ok) return [];
+    const data = await r.json();
+    const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
+    return arr.map(s => {
+      const id = s.id ?? s.slotId ?? s.slot_id;
+      const start = s.startAt ?? s.start_at ?? s.start;
+      const end = s.endAt ?? s.end_at ?? s.end;
+      return { id, label: `${formatTime(start)} – ${formatTime(end)}` };
+    }).filter(s => s.id != null);
+  }
+
+  function formatTime(isoLike) {
+    if (!isoLike) return "??:??";
+    const d = new Date(String(isoLike).replace(" ", "T"));
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${hh}:${mm}`;
   }
 
   // ===== Даты =====
@@ -131,10 +163,7 @@
       const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
       return arr.map(f => ({ value: String(f.id), label: f.name || f.title || `Факультет ${f.id}` }));
     } catch {
-      return [
-        { value: "facA", label: "Факультет А" },
-        { value: "facB", label: "Факультет Б" }
-      ];
+      return [];
     }
   }
   async function loadSpecs() {
@@ -145,10 +174,7 @@
       const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
       return arr.map(s => ({ value: String(s.id), label: s.name || s.title || `Спец. ${s.id}` }));
     } catch {
-      return [
-        { value: "spec1", label: "Специализация 1" },
-        { value: "spec2", label: "Специализация 2" }
-      ];
+      return [];
     }
   }
 
@@ -174,7 +200,7 @@
           label: slotSel?.selectedOptions?.[0]?.textContent || "—"
         };
 
-        const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek: "", weekParityType: "ANY", timeZoneId: "Europe/Berlin" };
+        const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek: "", weekParityType: "ANY" };
         if (!sched.dayOfWeek) {
           const dateStr = $("#date-input")?.value || "";
           sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
@@ -189,20 +215,21 @@
           roomName, capacity, floor, slot,
           classroomId,
           dayOfWeek: sched.dayOfWeek,
-          weekParityType: sched.weekParityType,
-          timeZoneId: sched.timeZoneId
+          weekParityType: sched.weekParityType
         });
       });
     });
   }
 
-  // === Подсветка заполняемости ===
+  // === Подсветка заполняемости (по людям) ===
   async function refreshOccupancy() {
-    const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek: "", weekParityType: "ANY", timeZoneId: "Europe/Berlin" };
+    const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek: "", weekParityType: "ANY" };
     if (!sched.dayOfWeek) {
       const dateStr = $("#date-input")?.value || "";
       sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
     }
+    const slotSel = $("#slot-filter");
+    const slotId = Number(slotSel?.value || 0);
 
     const rooms = $all(".room");
     await Promise.all(rooms.map(async (btn) => {
@@ -211,45 +238,37 @@
       const capacity = Number(btn.dataset.capacity || 0);
       const classroomId = classroomIdFromRoom(roomName);
       try {
-        const list = await fetchBookings(classroomId, sched.dayOfWeek, sched.weekParityType);
-        paintRoom(btn, list.length, capacity);
+        const list = await fetchBookings(classroomId, sched.dayOfWeek, sched.weekParityType, slotId);
+        const totalPersons = (list || []).reduce((sum, b) => {
+          const g = groupsCache.byId.get(Number(b.groupId));
+          return sum + (g ? Number(g.personsCount || 0) : 0);
+        }, 0);
+        paintRoom(btn, totalPersons, capacity);
       } catch {
         paintRoom(btn, 0, capacity);
       }
     }));
   }
 
-  function paintRoom(btn, used, capacity) {
+  // Легенда: пусто | ≤100% | до +25% | до +50% | > +50%
+  function paintRoom(btn, usedPersons, capacity) {
     btn.classList.remove("idle","ok","warn","danger","over");
 
-    if (!capacity || used <= 0) {            // нет вместимости или нет занятости
-      btn.classList.add("idle");
-      return;
-    }
+    if (!capacity || usedPersons <= 0) { btn.classList.add("idle"); return; }
 
-    const ratio = used / capacity;           // сколько от вместимости занято
-
-    if (ratio < 1.0) {                       // < 100%
-      btn.classList.add("ok");
-      return;
-    }
-    if (ratio < 1.25) {                      // < 125%
-      btn.classList.add("warn");
-      return;
-    }
-    if (ratio < 1.5) {                       // < 150%
-      btn.classList.add("danger");
-      return;
-    }
-    // >= 150% (строго "больше 150%" — попадают сюда ratio >= 1.5; при точном ==1.5 сюда)
-    btn.classList.add("over");
+    const ratio = usedPersons / capacity;
+    if (ratio <= 1.0)  { btn.classList.add("ok");     return; } // ≤100%
+    if (ratio <= 1.25) { btn.classList.add("warn");   return; } // до +25%
+    if (ratio <= 1.5)  { btn.classList.add("danger"); return; } // до +50%
+    btn.classList.add("over");                                   // > +50%
   }
 
-  async function fetchBookings(classroomId, dayOfWeek, weekParityType) {
+  async function fetchBookings(classroomId, dayOfWeek, weekParityType, slotId) {
     const params = new URLSearchParams({
       classroomId: String(classroomId),
       dayOfWeek: dayOfWeek || "",
-      weekParityType: weekParityType || "ANY"
+      weekParityType: weekParityType || "ANY",
+      slotId: String(slotId || 0)
     });
     const r = await fetch(`/api/bookings/search?${params.toString()}`);
     if (!r.ok) return [];
@@ -260,7 +279,7 @@
     $("#date-input")?.addEventListener("change", refreshOccupancy);
     $("#sch-weektype")?.addEventListener("change", refreshOccupancy);
     $("#sch-day")?.addEventListener("change", refreshOccupancy);
-    $("#sch-tz")?.addEventListener("change", refreshOccupancy);
+    $("#slot-filter")?.addEventListener("change", refreshOccupancy);
   }
 
   // ===== Утилиты =====
@@ -282,6 +301,5 @@
     }
   }
 
-  // даём доступ дашборду к ручному ре-рендеру из других модулей
   window.planRefreshOccupancy = refreshOccupancy;
 })();

@@ -10,9 +10,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-    List<Booking> findAllByClassroomIdAndDayOfWeekAndWeekParityType(
+    List<Booking> findAllByClassroomIdAndDayOfWeekAndWeekParityTypeAndSlotId(
             Long classroomId,
             DayOfWeek dayOfWeek,
-            WeekParityType weekParityType
+            WeekParityType weekParityType,
+            Long slotId
     );
 }

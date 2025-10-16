@@ -87,22 +87,49 @@ public class ClassroomService {
     }
 
     /** Для фронта: найти по name, если нет — создать (с capacity). */
+    // src/main/java/org/santayn/reservation/service/ClassroomService.java
     @Transactional
     public ClassroomDto ensureByName(ClassroomEnsureRequest req) {
-        Classroom c = classroomRepo.findByName(req.name())
-                .orElseGet(() -> classroomRepo.save(
-                        Classroom.builder()
-                                .name(req.name())
-                                .capacity(Optional.ofNullable(req.capacity()).orElse(0))
-                                .build()
-                ));
-        // если уже существовал — можно обновить capacity, если укажешь логику:
+        String key = Optional.ofNullable(req.name()).orElse("").trim();
+        if (key.isEmpty()) {
+            throw new NotFoundException("Classroom not found: <empty>");
+        }
+
+        // 1) пробуем точное имя
+        Optional<Classroom> found = classroomRepo.findByName(key);
+
+        // 2) если не найдено — пробуем по короткому коду/вхождению
+        if (found.isEmpty()) {
+            // вытаскиваем цифры, чтобы "Ауд. 102" и "102" совпали
+            String digits = key.replaceAll("\\D+", "");
+            if (!digits.isBlank()) {
+                found = classroomRepo.findFirstByNameContainingIgnoreCase(digits);
+            } else {
+                // если цифр нет, ищем хотя бы по вхождению исходной строки
+                found = classroomRepo.findFirstByNameContainingIgnoreCase(key);
+            }
+        }
+
+        Classroom c = found.orElseGet(() -> {
+            // если пришёл чистый код — создаём с префиксом "Ауд. "
+            String nameToCreate = key.matches("\\d+") ? "Ауд. " + key : key;
+            return classroomRepo.save(
+                    Classroom.builder()
+                            .name(nameToCreate)
+                            .capacity(Optional.ofNullable(req.capacity()).orElse(0))
+                            .build()
+            );
+        });
+
+        // при желании обновляем capacity у уже существующего
         if (req.capacity() != null && !Objects.equals(c.getCapacity(), req.capacity())) {
             c.setCapacity(req.capacity());
             c = classroomRepo.save(c);
         }
+
         return toDto(c);
     }
+
 
     // ---------- helpers.js ----------
 

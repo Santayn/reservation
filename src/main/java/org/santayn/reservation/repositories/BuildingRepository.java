@@ -17,4 +17,6 @@ public interface BuildingRepository extends JpaRepository<Building, Long> {
      * Находит корпус по имени без учёта регистра.
      */
     Optional<Building> findByNameIgnoreCase(String name);
+
+    Optional<Building> findByName(String name);
 }

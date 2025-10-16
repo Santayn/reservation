@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Слоты расписания — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+
+    <script type="module">
+        import {
+          injectSidebar, qs, qsa, toastOK, toastErr, clearAlerts,
+          listSlots, /*createSlot,*/ deleteSlot
+        } from '/cabinet/js/api.js';
+
+        // фиктивная дата для POST
+        const BASE_DATE = '1970-01-01';
+
+        // форматируем ISO/строку в HH:mm (для списка)
+        const hhmm = (v) => {
+          if (!v) return '??:??';
+          const s = String(v).replace(' ', 'T');
+          const t = s.includes('T') ? s.split('T')[1] : s;
+          const [h='??', m='??'] = t.split(':');
+          return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+        };
+
+        // конвертируем "HH:mm" -> "1970-01-01THH:mm:00"
+        const toISO = (hm) => `${BASE_DATE}T${hm}:00`;
+
+        function validate(start, end){
+          if (!start || !end) return 'Укажите начало и конец';
+          const [sh,sm] = start.split(':').map(Number);
+          const [eh,em] = end.split(':').map(Number);
+          const s = sh*60+sm, e = eh*60+em;
+          if (!(e > s)) return 'Конец должен быть позже начала';
+          return '';
+        }
+
+        async function loadList(){
+          const box = qs('#slots-list');
+          const err = qs('#slots-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const items = await listSlots(); // [{id,startAt,endAt}, ...]
+            if (!Array.isArray(items) || items.length === 0){
+              box.innerHTML = '<div class="muted">Пока пусто</div>';
+              return;
+            }
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Начало</div>
+              <div>Окончание</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            items.forEach(s=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${s.id}</div>
+                <div><b>${hhmm(s.startAt)}</b></div>
+                <div><b>${hhmm(s.endAt)}</b></div>
+                <div style="text-align:right">
+                  <button type="button" class="btn danger" data-del="${s.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            toastErr(err, e?.message || 'Ошибка загрузки списка');
+          }
+        }
+
+        // локальная реализация "варианта A": шлём полный ISO LocalDateTime
+        async function createSlotISO(startHm, endHm){
+          const body = {
+            startAt: toISO(startHm),
+            endAt:   toISO(endHm)
+          };
+          const r = await fetch('/api/schedule/slots', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          if (!r.ok){
+            const text = await r.text().catch(()=> '');
+            throw new Error(text || `HTTP ${r.status}`);
+          }
+          return r.json().catch(()=>null);
+        }
+
+        async function onCreate(){
+          clearAlerts();
+          const err = qs('#slots-error'), ok = qs('#slots-ok');
+          const start = qs('#slot-start').value.trim(); // HH:mm
+          const end   = qs('#slot-end').value.trim();   // HH:mm
+          const v = validate(start, end);
+          if (v) return toastErr(err, v);
+
+          const btn = qs('#btn-add-slot');
+          const prev = btn.textContent; btn.disabled = true; btn.textContent = 'Добавляю...';
+          try{
+            await createSlotISO(start, end); // ← отправляем ISO-датавремя
+            toastOK(ok, 'Слот добавлен');
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось создать слот');
+          }finally{
+            btn.disabled = false; btn.textContent = prev;
+          }
+        }
+
+        async function onDelete(id){
+          clearAlerts();
+          const err = qs('#slots-error'), ok = qs('#slots-ok');
+          try{
+            await deleteSlot(id);
+            toastOK(ok, `Удалено (#${id})`);
+            await loadList();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('slots');
+
+          qs('#btn-add-slot')?.addEventListener('click', onCreate);
+          qsa('#slot-start,#slot-end').forEach(inp=>{
+            inp.addEventListener('keydown', (e)=>{
+              if (e.key === 'Enter'){ e.preventDefault(); onCreate(); }
+            });
+          });
+
+          qs('#slots-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if (!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить слот #${id}?`)) onDelete(id);
+          });
+
+          await loadList();
+        });
+    </script>
+
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+
+<main class="content">
+    <section class="card">
+        <h2>Создать слот</h2>
+        <div id="slots-error" class="alert error hidden"></div>
+        <div id="slots-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="slot-start">Начало*</label>
+                <input id="slot-start" type="time" step="60" value="08:00">
+            </div>
+            <div>
+                <label for="slot-end">Конец*</label>
+                <input id="slot-end" type="time" step="60" value="09:30">
+            </div>
+        </div>
+
+        <button id="btn-add-slot" type="button" class="btn primary">Добавить слот</button>
+        <div class="hint">POST <code>/api/schedule/slots</code> (в UI только HH:mm)</div>
+    </section>
+
+    <section class="card">
+        <h2>Список слотов</h2>
+        <div id="slots-list"></div>
+        <div class="hint">GET <code>/api/schedule/slots</code> · DELETE <code>/api/schedule/slots/{id}</code></div>
+    </section>
+</main>
+</body>
+</html>
