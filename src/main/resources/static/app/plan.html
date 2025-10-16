@@ -250,27 +250,6 @@
 <script src="/app/components/schedule-panel.js"></script>
 <script src="/app/plan-page.js"></script>
 
-<script>
-    // Пример инициализации панели и передачи её значений в ваш плановый JS:
-    // Это не ломает текущую логику, просто даёт доступ к параметрам серии.
-    (function(){
-      const panel = new window.SchedulePanel();
-      // где-то в plan-page.js вы можете прочитать window.__seriesFilter (или подписаться)
-      panel.setContext({
-        onChange: (v) => { window.__seriesFilter = v; }
-      });
-      // при клике «Создать серию» ваш JS может отправлять:
-      // POST /api/booking-series  с телом:
-      // {
-      //   classroomId: <id выбранной аудитории>,
-      //   groupId: <выбранная группа>,
-      //   timezone: window.__seriesFilter.timezone,
-      //   floor: window.__seriesFilter.floor,
-      //   dayOfWeek: window.__seriesFilter.dayOfWeek,
-      //   scheduleType: window.__seriesFilter.scheduleType,
-      //   weekType: window.__seriesFilter.weekType
-      // }
-    })();
-</script>
+
 </body>
 </html>

@@ -1,134 +1,89 @@
-// app/components/schedule-panel.js
+// schedule-panel.js
+// Панель параметров "Серия" + утилиты. Работает и если скрипт загружен после DOM.
+
 (function () {
-  const q = (id) => document.getElementById(id);
-  const qa = (sel) => Array.from(document.querySelectorAll(sel));
+  "use strict";
 
-  // default values
-  const DEFAULTS = {
-    scheduleType: 'WEEKLY',   // 'WEEKLY' | 'PARITY'
-    weekType: 'STABLE',       // 'STABLE' | 'EVEN' | 'ODD'
-    dayOfWeek: 1,             // 1..7 (Пн..Вс)
-    timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
-  };
+  const WEEK_TYPES = [
+    { value: "ANY",  label: "обычная (без чётности)" },
+    { value: "EVEN", label: "чётная" },
+    { value: "ODD",  label: "нечётная" }
+  ];
 
-  function getActiveFloor() {
-    const btn = document.querySelector('.floor-switch button.active');
-    const v = btn?.getAttribute('data-floor');
-    return v ? Number(v) : 1;
-  }
+  const DAYS = [
+    { value: "MONDAY",    label: "Понедельник" },
+    { value: "TUESDAY",   label: "Вторник" },
+    { value: "WEDNESDAY", label: "Среда" },
+    { value: "THURSDAY",  label: "Четверг" },
+    { value: "FRIDAY",    label: "Пятница" },
+    { value: "SATURDAY",  label: "Суббота" },
+    { value: "SUNDAY",    label: "Воскресенье" }
+  ];
 
-  class SchedulePanel {
-    constructor() {
-      // radio’s
-      this.rWeekly   = q('sch-mode-weekly');
-      this.rParity   = q('sch-mode-parity');
+  const $ = (sel) => document.querySelector(sel);
 
-      // selects
-      this.selWeekType = q('sch-weektype'); // STABLE/EVEN/ODD
-      this.selDay      = q('sch-day');      // 1..7
-
-      // timezone input
-      this.inTimezone  = q('sch-tz');
-
-      // init day list if empty
-      if (this.selDay && this.selDay.options.length === 0) {
-        const days = [
-          [1, 'Понедельник'], [2,'Вторник'], [3,'Среда'], [4,'Четверг'],
-          [5,'Пятница'], [6,'Суббота'], [7,'Воскресенье']
-        ];
-        this.selDay.innerHTML = days.map(([v,t]) => `<option value="${v}">${t}</option>`).join('');
-      }
-
-      // init weekType options if empty
-      if (this.selWeekType && this.selWeekType.options.length === 0) {
-        this.selWeekType.innerHTML = `
-          <option value="STABLE">стабильная (каждую неделю)</option>
-          <option value="EVEN">чётная неделя</option>
-          <option value="ODD">нечётная неделя</option>
-        `;
-      }
-
-      // handlers
-      const syncWeekTypeAvailability = () => {
-        const weekly = !!this.rWeekly?.checked;
-        if (this.selWeekType) {
-          if (weekly) {
-            this.selWeekType.value = 'STABLE';
-            this.selWeekType.disabled = true;
-          } else {
-            // PARITY
-            if (this.selWeekType.value === 'STABLE') {
-              this.selWeekType.value = 'EVEN';
-            }
-            this.selWeekType.disabled = false;
-          }
-        }
-      };
-
-      const emit = () => this.onChange?.(this.getValue());
-
-      this.rWeekly?.addEventListener('change', () => { syncWeekTypeAvailability(); emit(); });
-      this.rParity?.addEventListener('change', () => { syncWeekTypeAvailability(); emit(); });
-      this.selWeekType?.addEventListener('change', emit);
-      this.selDay?.addEventListener('change', emit);
-      this.inTimezone?.addEventListener('change', emit);
-      qa('.floor-switch button').forEach(b => {
-        b.addEventListener('click', () => {
-          qa('.floor-switch button').forEach(x => x.classList.remove('active'));
-          b.classList.add('active');
-          emit();
-        });
-      });
-
-      // initial values
-      this.setValue(DEFAULTS);
-      syncWeekTypeAvailability();
+  function fillSelect(el, options, placeholder) {
+    if (!el) return;
+    el.innerHTML = "";
+    if (placeholder) {
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = placeholder;
+      el.appendChild(ph);
     }
-
-    getValue() {
-      const weekly = !!this.rWeekly?.checked;
-      const scheduleType = weekly ? 'WEEKLY' : 'PARITY';
-      let weekType = this.selWeekType?.value || 'STABLE';
-      if (scheduleType === 'WEEKLY') weekType = 'STABLE';
-
-      return {
-        scheduleType,
-        weekType,
-        dayOfWeek: Number(this.selDay?.value || 1),
-        timezone: (this.inTimezone?.value || DEFAULTS.timezone || 'UTC'),
-        floor: getActiveFloor()
-      };
-    }
-
-    setValue({ scheduleType, weekType, dayOfWeek, timezone } = {}) {
-      const st = scheduleType || DEFAULTS.scheduleType;
-      if (this.rWeekly) this.rWeekly.checked = (st === 'WEEKLY');
-      if (this.rParity) this.rParity.checked = (st === 'PARITY');
-
-      if (typeof dayOfWeek === 'number' && this.selDay) {
-        this.selDay.value = String(dayOfWeek);
-      } else if (this.selDay && !this.selDay.value) {
-        this.selDay.value = String(DEFAULTS.dayOfWeek);
-      }
-
-      if (this.inTimezone) {
-        this.inTimezone.value = timezone || DEFAULTS.timezone;
-      }
-
-      if (this.selWeekType) {
-        const wt = (st === 'WEEKLY') ? 'STABLE' : (weekType || 'EVEN');
-        this.selWeekType.value = wt;
-        this.selWeekType.disabled = (st === 'WEEKLY');
-      }
-
-      this.onChange?.(this.getValue());
-    }
-
-    setContext({ onChange } = {}) {
-      this.onChange = (typeof onChange === 'function') ? onChange : null;
-      this.onChange?.(this.getValue());
+    for (const o of options) {
+      const opt = document.createElement("option");
+      opt.value = o.value;
+      opt.textContent = o.label;
+      el.appendChild(opt);
     }
   }
 
-  window.SchedulePanel = SchedulePanel;
+  function init() {
+    const modeWeekly = $("#sch-mode-weekly");
+    const modeParity = $("#sch-mode-parity");
+    const weekType   = $("#sch-weektype");
+    const daySel     = $("#sch-day");
+    const tzInput    = $("#sch-tz");
+
+    fillSelect(weekType, WEEK_TYPES);
+    fillSelect(daySel, DAYS, "— выберите день —");
+
+    if (tzInput && !tzInput.value) tzInput.value = "Europe/Berlin";
+
+    function onModeChange() {
+      weekType.disabled = false;
+      daySel.disabled = false;
+    }
+    modeWeekly?.addEventListener("change", onModeChange);
+    modeParity?.addEventListener("change", onModeChange);
+    onModeChange();
+  }
+
+  function getSettings() {
+    const day = $("#sch-day")?.value || "";
+    const weekParityType = $("#sch-weektype")?.value || "ANY";
+    const timeZoneId = $("#sch-tz")?.value?.trim() || "Europe/Berlin";
+    return { dayOfWeek: day, weekParityType, timeZoneId };
+  }
+
+  function dayOfWeekFromDateStr(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr + "T00:00:00");
+    const jsDow = d.getDay(); // 0..6 (Sun..Sat)
+    const map = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"];
+    return map[jsDow];
+  }
+
+  function ready(cb) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", cb, { once: true });
+    } else {
+      cb();
+    }
+  }
+
+  ready(init);
+
+  window.SchedulePanel = { init, getSettings, dayOfWeekFromDateStr };
 })();

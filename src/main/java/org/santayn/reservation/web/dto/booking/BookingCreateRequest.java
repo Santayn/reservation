@@ -1,22 +1,68 @@
 package org.santayn.reservation.web.dto.booking;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.NotNull;
+import java.time.DayOfWeek;
+import org.santayn.reservation.models.schedule.WeekParityType;
 
-import java.time.LocalDate;
-import java.util.List;
+/**
+ * Запрос на создание/обновление упрощённого Booking.
+ */
+public class BookingCreateRequest {
 
-// src/main/java/org/santayn/reservation/web/dto/booking/BookingCreateRequest.java
-// org.santayn.reservation.web.dto.booking.BookingCreateRequest
-public record BookingCreateRequest(
-        LocalDate date,
-        Long slotId,
-        Long classroomId,
-        List<Long> groupIds,
+    private DayOfWeek dayOfWeek;
+    private Integer floor;
+    private WeekParityType weekParityType;
+    private String timeZoneId;
+    private Long classroomId;
+    private Long groupId;
 
-        // НОВОЕ — необязательные
-        String scheduleMode,        // "WEEKLY" | "PARITY"
-        String scheduleWeekParity,  // "EVEN" | "ODD" | null
-        Integer scheduleDayOfWeek   // 1..7
-) {}
+    public BookingCreateRequest() {
+    }
+
+    public DayOfWeek getDayOfWeek() {
+        return dayOfWeek;
+    }
+
+    public void setDayOfWeek(DayOfWeek dayOfWeek) {
+        this.dayOfWeek = dayOfWeek;
+    }
+
+    public Integer getFloor() {
+        return floor;
+    }
+
+    public void setFloor(Integer floor) {
+        this.floor = floor;
+    }
+
+    public WeekParityType getWeekParityType() {
+        return weekParityType;
+    }
+
+    public void setWeekParityType(WeekParityType weekParityType) {
+        this.weekParityType = weekParityType;
+    }
+
+    public String getTimeZoneId() {
+        return timeZoneId;
+    }
+
+    public void setTimeZoneId(String timeZoneId) {
+        this.timeZoneId = timeZoneId;
+    }
+
+    public Long getClassroomId() {
+        return classroomId;
+    }
+
+    public void setClassroomId(Long classroomId) {
+        this.classroomId = classroomId;
+    }
+
+    public Long getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
+    }
+}

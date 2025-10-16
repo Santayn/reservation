@@ -1,61 +1,77 @@
 package org.santayn.reservation.models.booking;
 
-import jakarta.persistence.*;
-import lombok.*;
-import org.santayn.reservation.models.classroom.Classroom;
-import org.santayn.reservation.models.group.Group;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-import org.santayn.reservation.models.schedule.ScheduleSlot;
-import org.santayn.reservation.models.user.User;
+import java.time.DayOfWeek;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
-
+/**
+ * Упрощённая сущность Booking.
+ * Поля:
+ * 1) id
+ * 2) dayOfWeek        — день недели
+ * 3) floor            — этаж
+ * 4) weekParityType   — тип недели: чётная / нечётная / обычная
+ * 5) timeZoneId       — идентификатор таймзоны (например, "Europe/Berlin")
+ * 6) classroomId      — идентификатор аудитории
+ * 7) groupId          — идентификатор группы
+ */
 @Entity
-@Table(name = "bookings",
+@Table(
+        name = "bookings",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uq_booking_date_slot_room",
-                        columnNames = {"booking_date", "slot_id", "classroom_id"})
-        })
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+                @UniqueConstraint(
+                        name = "uq_booking_classroom_day_parity_group",
+                        columnNames = {"day_of_week", "week_parity_type", "classroom_id", "group_id"}
+                )
+        }
+)
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Booking {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Дата брони (для «короткой» брони). */
-    @Column(name = "booking_date", nullable = false)
-    private LocalDate date;
+    /** 2) День недели. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "day_of_week", nullable = false, length = 16)
+    private DayOfWeek dayOfWeek;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "slot_id", nullable = false,
-            foreignKey = @ForeignKey(name = "fk_booking_slot"))
-    private ScheduleSlot slot;
+    /** 3) Этаж. */
+    @Column(name = "floor", nullable = false)
+    private Integer floor;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "classroom_id", nullable = false,
-            foreignKey = @ForeignKey(name = "fk_booking_room"))
-    private Classroom classroom;
+    /** 4) Тип недели: чётная, нечётная или обычная (без различия чётности). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "week_parity_type", nullable = false, length = 8)
+    private org.santayn.reservation.models.schedule.WeekParityType weekParityType;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "created_by_id", foreignKey = @ForeignKey(name = "fk_booking_created_by"))
-    private User createdBy;
+    /** 5) Таймзона (строковый идентификатор ZoneId). */
+    @Column(name = "time_zone_id", nullable = false, length = 64)
+    private String timeZoneId;
 
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    /** 6) ID аудитории. */
+    @Column(name = "classroom_id", nullable = false)
+    private Long classroomId;
 
-    /** Группы, забронировавшие аудиторию. */
-    @ManyToMany
-    @JoinTable(
-            name = "booking_groups",
-            joinColumns = @JoinColumn(name = "booking_id",
-                    foreignKey = @ForeignKey(name = "fk_bg_booking")),
-            inverseJoinColumns = @JoinColumn(name = "group_id",
-                    foreignKey = @ForeignKey(name = "fk_bg_group"))
-    )
-    @Builder.Default
-    private Set<Group> groups = new HashSet<>();
+    /** 7) ID группы. */
+    @Column(name = "group_id", nullable = false)
+    private Long groupId;
 }
