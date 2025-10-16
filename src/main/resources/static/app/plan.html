@@ -30,7 +30,10 @@
         <!-- Слот нужен для разовых броней (серии его не используют) -->
         <div class="group" role="group" aria-label="Выбор слота">
             <strong>Слот:</strong>
-            <select id="slot-filter" aria-label="Слот времени"></select>
+            <select id="slot-filter" aria-label="Слот времени">
+                <!-- placeholder нейтральной позиции; реальные слоты подставит JS -->
+                <option value="">— выберите слот —</option>
+            </select>
         </div>
 
         <!-- МИНИ-ПАНЕЛЬ СЕРИИ: режим, тип недели, день недели, тайм-зона -->
@@ -44,29 +47,39 @@
             </label>
 
             <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
-                <!-- наполняется schedule-panel.js: STABLE/EVEN/ODD -->
+                <!-- нейтральная позиция; варианты подставит schedule-panel.js -->
+                <option value="">— любая —</option>
             </select>
 
             <label style="margin-left:10px;"><strong>День:</strong></label>
             <select id="sch-day" style="min-width:180px" aria-label="День недели">
-                <!-- наполняется schedule-panel.js при необходимости -->
+                <!-- нейтральная позиция; варианты подставит schedule-panel.js -->
+                <option value="">— выберите день —</option>
             </select>
 
             <label style="margin-left:10px;"><strong>TZ:</strong></label>
             <input id="sch-tz" type="text" style="min-width:220px" aria-label="Тайм-зона" placeholder="Europe/Vienna">
         </div>
 
-        <!-- КНОПКА ФИЛЬТР + МЕНЮ (как было) -->
+        <!-- КНОПКА ФИЛЬТР + МЕНЮ -->
         <div class="group filter-wrap">
             <button id="filter-btn" type="button">Фильтр</button>
-            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
+            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий" aria-modal="true">
                 <div class="row">
                     <div>Факультет:</div>
-                    <div><select id="flt-faculty"></select></div>
+                    <div>
+                        <select id="flt-faculty">
+                            <!-- schedule наполняет; нейтральная позиция будет добавлена из JS -->
+                        </select>
+                    </div>
                 </div>
                 <div class="row">
                     <div>Специализация:</div>
-                    <div><select id="flt-spec"></select></div>
+                    <div>
+                        <select id="flt-spec">
+                            <!-- schedule наполняет; нейтральная позиция будет добавлена из JS -->
+                        </select>
+                    </div>
                 </div>
                 <div class="actions">
                     <button type="button" id="flt-apply">Применить</button>
@@ -147,10 +160,14 @@
                     <div class="room foyer" aria-disabled="true" data-room="Фойе" data-capacity="0">Фойе</div>
                 </div>
                 <div class="floor" data-floor="2">
-                    <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                    </div>
                 </div>
                 <div class="floor" data-floor="3">
-                    <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                    <div class="rooms">
+                        <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
+                    </div>
                 </div>
             </section>
 
@@ -216,7 +233,7 @@
     <div class="content">
         <div class="kv"><div>Помещение:</div><div><b id="d-room">—</b></div></div>
         <div class="kv"><div>Вместимость:</div><div><span id="d-cap"></span></div></div>
-        <div class="kv"><div>Сlot:</div><div><span id="d-slot"></span></div></div>
+        <div class="kv"><div>Слот:</div><div><span id="d-slot"></span></div></div>
         <div class="kv"><div>Кем занято:</div><div id="d-by" class="muted">—</div></div>
 
         <div class="hr"></div>
@@ -246,10 +263,8 @@
 </aside>
 
 <script src="/app/components/room-drawer.js"></script>
-<!-- теперь ПОДКЛЮЧАЕМ обновлённую мини-панель серии -->
 <script src="/app/components/schedule-panel.js"></script>
 <script src="/app/plan-page.js"></script>
-
 
 </body>
 </html>
