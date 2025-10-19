@@ -56,23 +56,41 @@ public class BookingRestController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Поиск брони по аудитории + дню + типу недели + слоту. */
+    /**
+     * Поиск броней по дню/чётности/слоту.
+     * classroomId опционален: если не указан — ищем по всем аудиториям.
+     *
+     * Чётность — СТРОГО:
+     *  - ANY  → возвращаем только записи с weekParityType = ANY;
+     *  - EVEN → только EVEN;
+     *  - ODD  → только ODD.
+     *
+     * slim:
+     *  - slim=true или classroomId=null → облегчённый ответ (BookingSlimResponse);
+     *  - иначе — полный BookingResponse.
+     */
     @GetMapping("/search")
-    public ResponseEntity<List<BookingResponse>> search(
-            @RequestParam Long classroomId,
+    public ResponseEntity<List<?>> search(
             @RequestParam DayOfWeek dayOfWeek,
             @RequestParam WeekParityType weekParityType,
-            @RequestParam Long slotId
+            @RequestParam Long slotId,
+            @RequestParam(required = false) Long classroomId,
+            @RequestParam(required = false, defaultValue = "false") boolean slim
     ) {
-        // Для простоты фильтруем в памяти; при больших объёмах — добавьте метод в сервис, вызывающий репозиторий.
-        List<BookingResponse> list = service.getAll().stream()
-                .filter(b -> b.getClassroomId().equals(classroomId))
-                .filter(b -> b.getDayOfWeek() == dayOfWeek)
-                .filter(b -> b.getWeekParityType() == weekParityType)
-                .filter(b -> b.getSlotId().equals(slotId))
-                .map(this::toResponse)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(list);
+        List<Booking> filtered = service.search(dayOfWeek, weekParityType, slotId, classroomId);
+
+        boolean returnSlim = slim || classroomId == null;
+        if (returnSlim) {
+            List<BookingSlimResponse> body = filtered.stream()
+                    .map(BookingSlimResponse::from)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(body);
+        } else {
+            List<BookingResponse> body = filtered.stream()
+                    .map(this::toResponse)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(body);
+        }
     }
 
     private Booking toEntity(BookingCreateRequest r) {
@@ -96,6 +114,18 @@ public class BookingRestController {
                 b.getClassroomId(),
                 b.getGroupId()
         );
+    }
+
+    /** Облегчённый ответ для агрегированных запросов. */
+    public record BookingSlimResponse(
+            Long id,
+            Long classroomId,
+            Long groupId,
+            Integer floor
+    ) {
+        public static BookingSlimResponse from(Booking b) {
+            return new BookingSlimResponse(b.getId(), b.getClassroomId(), b.getGroupId(), b.getFloor());
+        }
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

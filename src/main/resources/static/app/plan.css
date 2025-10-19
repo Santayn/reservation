@@ -115,7 +115,7 @@ input[type="date"]{cursor:text}
   box-shadow:0 0 0 6px var(--sel-glow);
 }
 
-/* ==== Подсветка совпадений по фильтру (не скрываем остальные) ==== */
+/* ==== Подсветка совпадений по фильтру ==== */
 .room.filter-hit::before{
   content:"";
   position:absolute; inset:-2px;
@@ -129,3 +129,36 @@ input[type="date"]{cursor:text}
   opacity:.45;
   filter:saturate(.7);
 }
+
+/* ==== Яркая подсветка кабинета при выборе занятия преподавателя ==== */
+.room.teacher-focus {
+  outline: 3px solid #6a5acd;
+  box-shadow: 0 0 0 4px rgba(106,90,205,0.25), 0 8px 20px rgba(106,90,205,0.35);
+  position: relative;
+  z-index: 2;
+  animation: teacherPulse 1s ease-in-out 2;
+}
+@keyframes teacherPulse {
+  0% { transform: scale(1.00); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1.00); }
+}
+
+/* ==== карточки расписания преподавателя ==== */
+.teacher-schedule { margin-top: 14px; }
+.teacher-schedule h2 { margin: 8px 0 6px; font-size: 16px; }
+.ts-help { margin-bottom: 6px; color:#666; }
+.ts-list { display: grid; gap: 6px; }
+.ts-ul { list-style:none; padding:0; margin:0; display:grid; gap:6px; }
+.ts-item { padding: 0; }
+.ts-item .ts-row{
+  width:100%; text-align:left;
+  display:grid; grid-template-columns:120px 120px 1fr 1fr 100px; gap:8px;
+  padding:8px 10px;
+  border:1px solid #d7d7d7; border-radius:8px; background:#fff;
+  cursor:pointer;
+}
+.ts-item .ts-row:hover { background:#f7f7ff; border-color:#b6b6ff; }
+.ts-col{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.ts-day,.ts-room,.ts-group{font-weight:600}
+.ts-empty { color:#777; }

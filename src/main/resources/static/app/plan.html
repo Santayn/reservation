@@ -12,7 +12,7 @@
     <p class="lead">Выберите дату и слот для разовой брони или задайте параметры серии (режим, неделя, день, тайм-зона), затем кликните по аудитории.</p>
 
     <div class="toolbar" role="toolbar" aria-label="Фильтры">
-        <!-- ДАТА: диапазон (для разовых броней и просмотра) -->
+        <!-- ДАТА -->
         <div class="group">
             <strong>Дата:</strong>
             <input id="date-input" type="date" aria-label="Дата начала" />
@@ -20,6 +20,7 @@
             <input id="date-end-input" type="date" aria-label="Дата окончания" />
         </div>
 
+        <!-- Этаж -->
         <div class="group floor-switch" role="group" aria-label="Выбор этажа">
             <strong>Этаж:</strong>
             <button type="button" data-floor="1" class="active" aria-pressed="true">1</button>
@@ -27,16 +28,15 @@
             <button type="button" data-floor="3" aria-pressed="false">3</button>
         </div>
 
-        <!-- Слот нужен для разовых броней (серии его не используют) -->
+        <!-- Слот -->
         <div class="group" role="group" aria-label="Выбор слота">
             <strong>Слот:</strong>
             <select id="slot-filter" aria-label="Слот времени">
-                <!-- placeholder нейтральной позиции; реальные слоты подставит JS -->
                 <option value="">— выберите слот —</option>
             </select>
         </div>
 
-        <!-- МИНИ-ПАНЕЛЬ СЕРИИ: режим, тип недели, день недели, тайм-зона -->
+        <!-- Серия -->
         <div class="group" role="group" aria-label="Параметры серии">
             <strong>Серия:</strong>
             <label style="margin-left:6px;">
@@ -47,13 +47,11 @@
             </label>
 
             <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
-                <!-- нейтральная позиция; варианты подставит schedule-panel.js -->
                 <option value="">— любая —</option>
             </select>
 
             <label style="margin-left:10px;"><strong>День:</strong></label>
             <select id="sch-day" style="min-width:180px" aria-label="День недели">
-                <!-- нейтральная позиция; варианты подставит schedule-panel.js -->
                 <option value="">— выберите день —</option>
             </select>
 
@@ -61,25 +59,17 @@
             <input id="sch-tz" type="text" style="min-width:220px" aria-label="Тайм-зона" placeholder="Europe/Vienna">
         </div>
 
-        <!-- КНОПКА ФИЛЬТР + МЕНЮ -->
+        <!-- Фильтр -->
         <div class="group filter-wrap">
             <button id="filter-btn" type="button">Фильтр</button>
-            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий" aria-modal="true">
+            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
                 <div class="row">
                     <div>Факультет:</div>
-                    <div>
-                        <select id="flt-faculty">
-                            <!-- schedule наполняет; нейтральная позиция будет добавлена из JS -->
-                        </select>
-                    </div>
+                    <div><select id="flt-faculty"></select></div>
                 </div>
                 <div class="row">
                     <div>Специализация:</div>
-                    <div>
-                        <select id="flt-spec">
-                            <!-- schedule наполняет; нейтральная позиция будет добавлена из JS -->
-                        </select>
-                    </div>
+                    <div><select id="flt-spec"></select></div>
                 </div>
                 <div class="actions">
                     <button type="button" id="flt-apply">Применить</button>
@@ -103,7 +93,14 @@
         </div>
     </div>
 
-    <!-- план здания (как был) -->
+    <!-- Блок расписания преподавателя (под teacher-schedule.js) -->
+    <section id="teacher-schedule-block" class="teacher-schedule" hidden aria-label="Моё расписание">
+        <h3>Моё расписание на выбранный день</h3>
+        <div id="teacher-schedule-list" class="ts-list"></div>
+        <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
+    </section>
+
+    <!-- План здания -->
     <div class="building" aria-label="План этажей">
         <div class="wings">
             <!-- Левый корпус -->
@@ -245,7 +242,6 @@
         <div class="split" style="margin-top:10px">
             <button type="button" id="save-book" class="btn">Сохранить бронирование</button>
             <button type="button" id="clear-book" class="btn danger-btn">Снять бронирование</button>
-            <!-- долгосрочное бронирование -->
             <button type="button" id="save-series" class="btn" style="background:#1b6; border-color:#1b6">Создать серию</button>
         </div>
 
@@ -265,6 +261,7 @@
 <script src="/app/components/room-drawer.js"></script>
 <script src="/app/components/schedule-panel.js"></script>
 <script src="/app/plan-page.js"></script>
-
+<!-- новый скрипт расписания преподавателя -->
+<script src="/app/teacher-schedule.js"></script>
 </body>
 </html>
