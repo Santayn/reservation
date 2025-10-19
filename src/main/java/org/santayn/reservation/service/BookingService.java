@@ -59,4 +59,13 @@ public class BookingService {
                                 Long classroomId) {
         return bookingRepository.search(dayOfWeek, weekParityType, slotId, classroomId);
     }
+    // === НОВОЕ ===
+    @Transactional(readOnly = true)
+    public List<Booking> searchByTeacher(Long teacherId,
+                                         DayOfWeek dayOfWeek,
+                                         WeekParityType weekParityType,
+                                         Long slotId,
+                                         Long classroomId) {
+        return bookingRepository.searchByTeacher(teacherId, dayOfWeek, weekParityType, slotId, classroomId);
+    }
 }

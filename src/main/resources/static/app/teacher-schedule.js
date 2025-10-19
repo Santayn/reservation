@@ -1,6 +1,6 @@
 // /app/teacher-schedule.js
-// Полное расписание препода: показываем ТОЛЬКО выбранный тип недели.
-// Используем те же кэши RoomsMeta/GroupsCache и агрегированный поиск (slim=true).
+// Моё полное расписание: берём только брони текущего пользователя (не-админа) через /api/bookings/my.
+// Показываем ТОЛЬКО выбранный тип недели. Название группы берём из GroupsCache.
 
 (function () {
   "use strict";
@@ -26,11 +26,11 @@
   ];
   const wtByValue = new Map(WEEK_TYPES.map(w => [w.value, w]));
 
-  // общие кэши из plan-page.js (при первом запуске могут быть ещё не заполнены)
+  // общие кэши из plan-page.js
   const RoomsMeta   = window.RoomsMeta   || { byId:new Map(), byName:new Map(), loaded:false };
   const GroupsCache = window.GroupsCache || { byId:new Map(), loaded:false };
 
-  // slots
+  // ===== slots =====
   function slotMapFromSelect() {
     const map = new Map();
     const sel = $("#slot-filter");
@@ -68,7 +68,11 @@
     return `${hh}:${mm}`;
   }
 
-  // helpers
+  // ===== helpers =====
+  function firstText(...vals){ for (const v of vals){ const s = v==null?"":String(v).trim(); if (s) return s; } return ""; }
+  function groupDisplayName(groupObj, id){
+    return firstText(groupObj?.name, groupObj?.title, groupObj?.groupName, groupObj?.shortName, groupObj?.code, groupObj?.number, groupObj?.label) || `Группа ${id}`;
+  }
   function classroomIdFromRoom(roomName) {
     const m = String(roomName).match(/\d{3}/);
     if (m) return Number(m[0]);
@@ -98,21 +102,32 @@
     }
   }
 
-  // агрегированный поиск
-  const bookingsCache = new Map(); // "DAY|WEEK|SLOT" -> Promise<Array<{id,classroomId,groupId}>>
+  // ===== агрегированный поиск (для текущего препода) =====
+  // Ключ кэша: DAY|WEEK|SLOT
+  const bookingsCache = new Map(); // -> Promise<Array<Booking>>
   function keyDW(day, week, slotId){ return `${day}|${week}|${slotId}`; }
-  async function fetchAllBookings(dayOfWeek, weekParityType, slotId) {
+
+  async function fetchMyBookings(dayOfWeek, weekParityType, slotId) {
     const k = keyDW(dayOfWeek, weekParityType, slotId);
     if (bookingsCache.has(k)) return bookingsCache.get(k);
-    const params = new URLSearchParams({ dayOfWeek, weekParityType, slotId:String(slotId), slim:"true" });
-    const p = fetch(`/api/bookings/search?${params.toString()}`, { credentials:"include" })
-      .then(r => r.ok ? r.json() : [])
-      .catch(() => []);
+    const params = new URLSearchParams({
+      dayOfWeek, weekParityType, slotId:String(slotId)
+      // slim не нужен для /api/bookings/my — отдаём полные записи
+    });
+    const p = fetch(`/api/bookings/my?${params.toString()}`, { credentials:"include" })
+      .then(async r => {
+        if (r.status === 401) {
+          return { _error: "unauth", data: [] };
+        }
+        if (!r.ok) return { data: [] };
+        return { data: await r.json() };
+      })
+      .catch(() => ({ data: [] }));
     bookingsCache.set(k, p);
     return p;
   }
 
-  // рендер
+  // ===== рендер =====
   let buildVersion = 0;
 
   async function buildFullSchedule() {
@@ -130,7 +145,7 @@
 
     const wtVal = currentWeekType();
     const wt = wtByValue.get(wtVal) || { value: wtVal, label: wtVal };
-    if (title) title.textContent = `Моё расписание на выбранный день — ${wt.label}`;
+    if (title) title.textContent = `Моё расписание — ${wt.label}`;
 
     let slotMap = slotMapFromSelect();
     if (!slotMap.size) slotMap = await loadSlotsFromApi();
@@ -151,7 +166,6 @@
       else if (/центр/i.test(titleWing)) corpus = "Центр";
       roomIdx.set(classroomId, { roomName, floor, corpus });
     }
-    // добиваем из БД, если каких-то аудиторий нет в DOM (на будущее)
     if (RoomsMeta.loaded && roomIdx.size === 0) {
       for (const [id, m] of RoomsMeta.byId.entries()) {
         roomIdx.set(Number(id), { roomName: m.name || String(id), floor: Number(m.floor||0), corpus: m.corpus || "Корпус" });
@@ -171,18 +185,29 @@
 
       for (const [slotId, slot] of slotMap.entries()) {
         /* eslint-disable no-await-in-loop */
-        const data = await fetchAllBookings(day.value, wt.value, slotId);
+        const { _error, data } = await fetchMyBookings(day.value, wt.value, slotId);
+        if (_error === "unauth") {
+          list.innerHTML = `<div class="muted">Не авторизован. Войдите, чтобы увидеть своё расписание.</div>`;
+          return;
+        }
         /* eslint-enable no-await-in-loop */
         for (const b of data) {
           const meta = roomIdx.get(Number(b.classroomId));
           if (!meta) continue;
+
+          // имя группы
+          const gid = Number(b.groupId);
+          const gObj = GroupsCache.byId.get?.(gid);
+          const gName = groupDisplayName(gObj, gid);
+
           items.push({
             time: slot.label,
             slotId,
             corpus: meta.corpus,
             floor: meta.floor,
             roomName: meta.roomName,
-            groupId: b.groupId,
+            groupId: gid,
+            groupName: gName
           });
         }
       }
@@ -193,7 +218,8 @@
         (a.slotId - b.slotId) ||
         a.corpus.localeCompare(b.corpus, "ru") ||
         (a.floor - b.floor) ||
-        a.roomName.localeCompare(b.roomName, "ru")
+        a.roomName.localeCompare(b.roomName, "ru") ||
+        a.groupName.localeCompare(b.groupName, "ru")
       );
 
       const dayWrap = document.createElement("div");
@@ -209,7 +235,7 @@
         row.style.padding = "2px 0";
         row.innerHTML =
           `<b>${it.time}</b> — ${it.corpus}, <b>${it.floor} эт.</b>, <b>${it.roomName}</b>` +
-          (it.groupId != null ? ` &nbsp;<span class="muted">• гр. ${it.groupId}</span>` : "");
+          (it.groupName ? ` &nbsp;<span class="muted">• гр. ${it.groupName}</span>` : "");
         row.addEventListener("click", () => {
           setScheduleControls({ weekType: wt.value, day: day.value, slotId: it.slotId });
           switchToFloor(it.floor);
@@ -228,11 +254,14 @@
   }
 
   function init() {
+    // Начальная сборка
     buildFullSchedule();
+
+    // Пересборка при смене чётности/слота
     $("#sch-weektype")?.addEventListener("change", () => buildFullSchedule());
     $("#slot-filter") ?.addEventListener("change", () => buildFullSchedule());
 
-    // пересборка, когда слоты заполнены динамически
+    // Пересборка, когда слоты подгрузятся динамически
     const sl = $("#slot-filter");
     if (sl) {
       const obs = new MutationObserver(() => {

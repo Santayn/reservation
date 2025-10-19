@@ -36,4 +36,20 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("slotId") Long slotId,
             @Param("classroomId") Long classroomId
     );
+
+    @Query("""
+       select b from Booking b
+       where b.teacherId = :teacherId
+         and (:dayOfWeek is null or b.dayOfWeek = :dayOfWeek)
+         and (:weekParityType is null or b.weekParityType = :weekParityType)
+         and (:slotId is null or b.slotId = :slotId)
+         and (:classroomId is null or b.classroomId = :classroomId)
+    """)
+    List<Booking> searchByTeacher(
+            @Param("teacherId") Long teacherId,
+            @Param("dayOfWeek") DayOfWeek dayOfWeek,
+            @Param("weekParityType") WeekParityType weekParityType,
+            @Param("slotId") Long slotId,
+            @Param("classroomId") Long classroomId
+    );
 }

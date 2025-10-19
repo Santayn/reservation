@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.santayn.reservation.service.AuthTeacherService;
 
 @RestController
 @RequestMapping(value = "/api/bookings", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class BookingRestController {
 
     private final BookingService service;
+    private final AuthTeacherService authTeacherService;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody BookingCreateRequest r) {
@@ -91,6 +93,20 @@ public class BookingRestController {
                     .collect(Collectors.toList());
             return ResponseEntity.ok(body);
         }
+    }
+
+    /** Расписание для текущего авторизованного пользователя, если он НЕ админ. */
+    @GetMapping("/my")
+    public ResponseEntity<List<BookingResponse>> mySchedule(
+            @RequestParam(required = false) DayOfWeek dayOfWeek,
+            @RequestParam(required = false) WeekParityType weekParityType,
+            @RequestParam(required = false) Long slotId,
+            @RequestParam(required = false) Long classroomId
+    ) {
+        Long teacherId = authTeacherService.currentTeacherId();
+        List<Booking> list = service.searchByTeacher(teacherId, dayOfWeek, weekParityType, slotId, classroomId);
+        List<BookingResponse> body = list.stream().map(this::toResponse).toList();
+        return ResponseEntity.ok(body);
     }
 
     private Booking toEntity(BookingCreateRequest r) {
