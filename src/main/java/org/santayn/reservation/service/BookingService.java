@@ -42,6 +42,7 @@ public class BookingService {
         existing.setSlotId(updated.getSlotId());
         existing.setClassroomId(updated.getClassroomId());
         existing.setGroupId(updated.getGroupId());
+        existing.setTeacherId(updated.getTeacherId());
         return bookingRepository.save(existing);
     }
 

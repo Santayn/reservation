@@ -28,6 +28,7 @@ import org.santayn.reservation.models.schedule.WeekParityType;
  * 5) slotId          — идентификатор слота расписания (start_at / end_at в таблице слотов)
  * 6) classroomId     — идентификатор аудитории
  * 7) groupId         — идентификатор группы
+ * 8) teacherId       — идентификатор преподавателя (опционально)
  */
 @Entity
 @Table(
@@ -75,4 +76,8 @@ public class Booking {
     /** ID группы. */
     @Column(name = "group_id", nullable = false)
     private Long groupId;
+
+    /** ID преподавателя (опционально; выбирается по имени на UI, сохраняем его id). */
+    @Column(name = "teacher_id")
+    private Long teacherId;
 }

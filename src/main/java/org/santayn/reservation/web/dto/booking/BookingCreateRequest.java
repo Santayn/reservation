@@ -1,35 +1,45 @@
 package org.santayn.reservation.web.dto.booking;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import java.time.DayOfWeek;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.santayn.reservation.models.schedule.WeekParityType;
 
-/** Запрос на создание/обновление Booking. */
+/**
+ * Запрос на создание/обновление брони.
+ * Добавлено поле teacherId для привязки к преподавателю, выбранному по имени на фронте.
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class BookingCreateRequest {
 
+    @NotNull
     private DayOfWeek dayOfWeek;
+
+    @NotNull
+    @Min(0)
     private Integer floor;
+
+    @NotNull
     private WeekParityType weekParityType;
+
+    @NotNull
     private Long slotId;
+
+    @NotNull
     private Long classroomId;
+
+    @NotNull
     private Long groupId;
 
-    public BookingCreateRequest() {}
-
-    public DayOfWeek getDayOfWeek() { return dayOfWeek; }
-    public void setDayOfWeek(DayOfWeek dayOfWeek) { this.dayOfWeek = dayOfWeek; }
-
-    public Integer getFloor() { return floor; }
-    public void setFloor(Integer floor) { this.floor = floor; }
-
-    public WeekParityType getWeekParityType() { return weekParityType; }
-    public void setWeekParityType(WeekParityType weekParityType) { this.weekParityType = weekParityType; }
-
-    public Long getSlotId() { return slotId; }
-    public void setSlotId(Long slotId) { this.slotId = slotId; }
-
-    public Long getClassroomId() { return classroomId; }
-    public void setClassroomId(Long classroomId) { this.classroomId = classroomId; }
-
-    public Long getGroupId() { return groupId; }
-    public void setGroupId(Long groupId) { this.groupId = groupId; }
+    /** ID преподавателя (опционально — можно не указывать). */
+    private Long teacherId;
 }

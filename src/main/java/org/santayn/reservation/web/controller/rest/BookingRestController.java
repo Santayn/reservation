@@ -101,6 +101,7 @@ public class BookingRestController {
                 .slotId(r.getSlotId())
                 .classroomId(r.getClassroomId())
                 .groupId(r.getGroupId())
+                .teacherId(r.getTeacherId())
                 .build();
     }
 
@@ -112,7 +113,8 @@ public class BookingRestController {
                 b.getWeekParityType(),
                 b.getSlotId(),
                 b.getClassroomId(),
-                b.getGroupId()
+                b.getGroupId(),
+                b.getTeacherId()
         );
     }
 

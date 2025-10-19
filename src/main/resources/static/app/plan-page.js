@@ -313,4 +313,4 @@
   }
 
   window.planRefreshOccupancy = refreshOccupancy;
-})();
+})()

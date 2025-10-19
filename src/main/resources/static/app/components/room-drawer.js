@@ -1,6 +1,9 @@
 // room-drawer.js
 // Используем slotId из селекта, никаких локальных слотов.
 // Чипы текущих групп кликабельны — удаляют именно свою бронь.
+// Обновлено:
+//  - корректное имя группы (displayName из нескольких возможных полей)
+//  - в списке преподавателей показывается login — Full Name (id=...)
 
 (function () {
   "use strict";
@@ -8,14 +11,21 @@
   const $ = (sel) => document.querySelector(sel);
   const el = (id) => document.getElementById(id);
 
-  const state = { open: false, current: null, lastBookings: [] };
+  const state = {
+    open: false,
+    current: null,
+    lastBookings: [],
+    selectedTeacherId: null
+  };
 
   // Кэш справочника аудиторий (по name -> id и id -> id)
   const classroomIndex = { byName: new Map(), byId: new Map(), loaded: false };
 
-  // Кэш групп
-  const groupsCache = { list: [], byId: new Map() };
+  // Кэши
+  const groupsCache   = { list: [], byId: new Map() };
+  const teachersCache = { list: [], byId: new Map(), loaded: false };
 
+  // --------------------- helpers ---------------------
   async function apiGet(url) {
     const r = await fetch(url);
     if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
@@ -31,13 +41,21 @@
     return r.json?.() ?? null;
   }
 
+  function firstText(...vals) {
+    for (const v of vals) {
+      const s = v == null ? "" : String(v).trim();
+      if (s) return s;
+    }
+    return "";
+  }
+
   async function ensureClassroomsIndex() {
     if (classroomIndex.loaded) return;
     const data = await apiGet("/api/classrooms?size=1000").catch(() => []);
     const items = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
     for (const c of items) {
       const pk = Number(c.id);
-      const nm = (c.name ?? "").toString().trim();
+      const nm = firstText(c.name);
       if (Number.isFinite(pk)) classroomIndex.byId.set(pk, pk);
       if (nm) classroomIndex.byName.set(nm, pk);
     }
@@ -49,23 +67,28 @@
       try { await apiGet(`/api/classrooms/${maybePk}`); return maybePk; } catch {}
     }
     await ensureClassroomsIndex();
-    const name = (roomCtx.roomName ?? "").toString().trim();
+    const name = firstText(roomCtx.roomName);
     if (name && classroomIndex.byName.has(name)) return classroomIndex.byName.get(name);
-    const idAsName = (roomCtx.classroomId ?? "").toString().trim();
+    const idAsName = firstText(roomCtx.classroomId);
     if (idAsName && classroomIndex.byName.has(idAsName)) return classroomIndex.byName.get(idAsName);
     throw new Error(`Не удалось определить PK аудитории для "${name || idAsName || "?"}"`);
   }
 
+  // --------------------- drawer ---------------------
   function openDrawer(roomCtx) {
     state.open = true;
     state.current = roomCtx;
+    state.selectedTeacherId = null;
 
     el("d-room").textContent = roomCtx.roomName;
     el("d-cap").textContent = String(roomCtx.capacity ?? 0);
     el("d-slot").textContent = roomCtx.slot?.label || "—";
     el("d-by").textContent = "—";
 
+    // очистка UI
     el("groups-box").innerHTML = "";
+    ensureTeacherSelectUI();         // создаём блок с <select>
+    resetTeacherSelect();            // очищаем значение
     el("current-chips").innerHTML = "—";
     el("usage-line").textContent = `0 / ${roomCtx.capacity ?? 0}`;
 
@@ -78,14 +101,20 @@
       };
     }
 
-    Promise.all([fetchCurrentBookings(roomCtx).catch(() => []), fetchGroups().catch(() => [])])
-      .then(([bookings, groups]) => {
-        state.lastBookings = bookings;
-        renderCurrentBookings(bookings, groupsCache.byId);
-        renderGroups(groups);
-        updateUsage(bookings, roomCtx.capacity || 0, groupsCache.byId);
-      })
-      .catch(() => {});
+    // грузим текущие брони + справочники
+    Promise.all([
+      fetchCurrentBookings(roomCtx).catch(() => []),
+      fetchGroups().catch(() => []),
+      fetchTeachers().catch(() => [])
+    ])
+    .then(([bookings]) => {
+      state.lastBookings = bookings;
+      renderCurrentBookings(bookings, groupsCache.byId);
+      renderGroups(groupsCache.list);
+      fillTeacherSelect(teachersCache.list);
+      updateUsage(bookings, roomCtx.capacity || 0, groupsCache.byId);
+    })
+    .catch(() => {});
 
     resolveClassroomPk(roomCtx).then((pk) => hydrateRoomMeta(pk)).catch(() => {});
 
@@ -105,17 +134,43 @@
     $("#drawer").setAttribute("aria-hidden", "true");
   }
 
+  // --------------------- data loads ---------------------
   async function fetchGroups() {
     try {
       const data = await apiGet("/api/groups?size=1000");
       const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
-      const mapped = arr.map((g) => ({
-        id: g.id,
-        name: g.name || g.title || `Группа ${g.id}`,
-        personsCount: Number(g.personsCount) || 0,
-      }));
+      const mapped = arr.map((g) => {
+        const id = Number(g.id);
+        // Нормализованное имя группы
+        const displayName = firstText(
+          g.name, g.title, g.groupName, g.shortName, g.code, g.number, g.label
+        ) || `Группа ${id}`;
+      return {
+          id,
+          displayName,
+          personsCount: Number(g.personsCount) || 0,
+        };
+      });
       groupsCache.list = mapped;
-      groupsCache.byId = new Map(mapped.map((g) => [Number(g.id), g]));
+      groupsCache.byId = new Map(mapped.map((g) => [g.id, g]));
+      return mapped;
+    } catch { return []; }
+  }
+
+  async function fetchTeachers() {
+    if (teachersCache.loaded && teachersCache.list.length) return teachersCache.list;
+    try {
+      const data = await apiGet("/api/teachers?size=1000");
+      const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
+      const mapped = arr.map(t => {
+        const id = Number(t.id);
+        const fullName = firstText(t.fullName, t.name) || `Преподаватель ${id}`;
+        const login = firstText(t.login, t.username, t.userLogin, t.user?.login) || "—";
+        return { id, fullName, login };
+      }).filter(t => Number.isFinite(t.id));
+      teachersCache.list = mapped;
+      teachersCache.byId = new Map(mapped.map(t => [t.id, t]));
+      teachersCache.loaded = true;
       return mapped;
     } catch { return []; }
   }
@@ -132,8 +187,14 @@
     return r.json();
   }
 
+  // --------------------- save / delete ---------------------
   async function saveBooking(selectedGroupId) {
     if (!state.current) return;
+    if (!Number.isFinite(state.selectedTeacherId)) {
+      alert("Выберите преподавателя.");
+      throw new Error("Преподаватель не выбран");
+    }
+
     const ctx = state.current;
     const body = {
       dayOfWeek: ctx.dayOfWeek,
@@ -142,6 +203,7 @@
       slotId: ctx.slot?.id || 0,
       classroomId: ctx.classroomId,
       groupId: selectedGroupId,
+      teacherId: state.selectedTeacherId   // <— обязательное поле
     };
     const r = await fetch("/api/bookings", {
       method: "POST",
@@ -152,7 +214,6 @@
     return r.json();
   }
 
-  // Удалить все брони в текущем слоте/аудитории
   async function deleteExistingBooking() {
     if (!state.current) return;
     const list = await fetchCurrentBookings(state.current);
@@ -163,7 +224,6 @@
     }
   }
 
-  // Удалить бронь конкретной группы
   async function deleteBookingForGroup(groupId) {
     if (!state.current) return;
     const list = await fetchCurrentBookings(state.current);
@@ -173,6 +233,138 @@
     if (!r.ok) throw new Error((await r.text()) || `Ошибка удаления (${r.status})`);
   }
 
+  // --------------------- render ---------------------
+  function renderCurrentBookings(bookings, groupsById) {
+    const box = el("d-by");
+    const chipsWrap = el("current-chips");
+
+    if (!bookings || !bookings.length) {
+      box.textContent = "—";
+      chipsWrap.innerHTML = "—";
+      return;
+    }
+
+    const names = [];
+    chipsWrap.innerHTML = "";
+    for (const b of bookings) {
+      const gid = Number(b.groupId);
+      const g = groupsById.get?.(gid);
+      const name = g?.displayName ?? String(gid);
+      const pcs  = Number(g?.personsCount ?? 0);
+      names.push(name);
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chip";
+      btn.title = "Удалить группу из бронирования";
+      btn.dataset.groupId = String(gid);
+      btn.innerHTML = `<b>${name}</b> <span>(${pcs} чел.)</span>`;
+      btn.addEventListener("click", async () => {
+        try {
+          await deleteBookingForGroup(gid);
+          const fresh = await fetchCurrentBookings(state.current);
+          state.lastBookings = fresh;
+          renderCurrentBookings(fresh, groupsCache.byId);
+          updateUsage(fresh, Number(el("c-cap").value) || (state.current?.capacity || 0), groupsCache.byId);
+          window.planRefreshOccupancy?.();
+        } catch (e) {
+          alert(e.message || "Не удалось удалить группу.");
+        }
+      });
+      chipsWrap.appendChild(btn);
+    }
+
+    box.textContent = `Группы: ${names.join(", ")}`;
+  }
+
+  function renderGroups(groups) {
+    const box = el("groups-box");
+    box.innerHTML = "";
+    for (const g of groups) {
+      const label = document.createElement("label");
+      label.style.display = "flex";
+      label.style.alignItems = "center";
+      label.style.gap = "6px";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "sel-group";
+      input.value = String(g.id);
+      label.appendChild(input);
+      const span = document.createElement("span");
+      span.textContent = `${g.displayName} (id=${g.id}, ${g.personsCount} чел.)`;
+      label.appendChild(span);
+      box.appendChild(label);
+    }
+  }
+
+  // --- Преподаватели: выпадающий список (логин — ФИО) ---
+  function ensureTeacherSelectUI() {
+    if (el("teacher-section")) return;
+    const drawer = $("#drawer .drawer-content") || $("#drawer");
+
+    const section = document.createElement("section");
+    section.id = "teacher-section";
+    section.style.margin = "12px 0";
+    section.style.borderTop = "1px solid #e5e5e5";
+    section.style.paddingTop = "10px";
+
+    section.innerHTML = `
+      <label for="teacher-select" style="font-weight:600; display:block; margin-bottom:6px;">
+        Преподаватель (обязательно)
+      </label>
+      <select id="teacher-select" style="width:100%; max-width:420px; padding:6px 8px;">
+        <option value="">—</option>
+      </select>
+    `;
+
+    // Вставим ПЕРЕД списком групп, если он есть
+    const groupsBox = el("groups-box");
+    if (groupsBox?.parentElement) {
+      groupsBox.parentElement.insertBefore(section, groupsBox);
+    } else {
+      drawer?.appendChild(section);
+    }
+
+    const sel = el("teacher-select");
+    if (sel && !sel._bound) {
+      sel.addEventListener("change", () => {
+        const v = sel.value.trim();
+        state.selectedTeacherId = v ? Number(v) : null;
+      });
+      sel._bound = true;
+    }
+  }
+
+  function resetTeacherSelect() {
+    const sel = el("teacher-select");
+    if (sel) {
+      sel.value = "";
+      state.selectedTeacherId = null;
+    }
+  }
+
+  function fillTeacherSelect(list) {
+    const sel = el("teacher-select");
+    if (!sel) return;
+    // очистить, добавить "—"
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "—";
+    sel.appendChild(opt0);
+
+    for (const t of list) {
+      const text = `${t.login} — ${t.fullName} (id=${t.id})`;
+      const opt = document.createElement("option");
+      opt.value = String(t.id);
+      opt.textContent = text;
+      sel.appendChild(opt);
+    }
+    sel.value = "";
+    state.selectedTeacherId = null;
+  }
+
+  // --------------------- room meta ---------------------
   async function hydrateRoomMeta(classroomPk) {
     const [buildings, faculties, specs] = await Promise.all([
       loadBuildings().catch(() => []),
@@ -208,72 +400,7 @@
     return arr.map((s) => ({ id: s.id, name: s.name || s.title || `Специализация ${s.id}` }));
   }
 
-  // Текущие брони: чипы кликабельны — удаляют именно эту группу
-  function renderCurrentBookings(bookings, groupsById) {
-    const box = el("d-by");
-    const chipsWrap = el("current-chips");
-
-    if (!bookings || !bookings.length) {
-      box.textContent = "—";
-      chipsWrap.innerHTML = "—";
-      return;
-    }
-
-    const names = [];
-    chipsWrap.innerHTML = "";
-    for (const b of bookings) {
-      const gid = Number(b.groupId);
-      const g = groupsById.get?.(gid);
-      const name = g?.name ?? String(gid);
-      const pcs  = Number(g?.personsCount ?? 0);
-      names.push(name);
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "chip";
-      btn.title = "Удалить группу из бронирования";
-      btn.dataset.groupId = String(gid);
-      btn.innerHTML = `<b>${name}</b> <span>(${pcs} чел.)</span>`;
-      btn.addEventListener("click", async () => {
-        try {
-          await deleteBookingForGroup(gid);
-          const fresh = await fetchCurrentBookings(state.current);
-          state.lastBookings = fresh;
-          renderCurrentBookings(fresh, groupsCache.byId);
-          updateUsage(fresh, Number(el("c-cap").value) || (state.current?.capacity || 0), groupsCache.byId);
-          window.planRefreshOccupancy?.();
-        } catch (e) {
-          alert(e.message || "Не удалось удалить группу.");
-        }
-      });
-      chipsWrap.appendChild(btn);
-    }
-
-    box.textContent = `Группы: ${names.join(", ")}`;
-  }
-
-  // Справочник групп — с количеством людей
-  function renderGroups(groups) {
-    const box = el("groups-box");
-    box.innerHTML = "";
-    for (const g of groups) {
-      const label = document.createElement("label");
-      label.style.display = "flex";
-      label.style.alignItems = "center";
-      label.style.gap = "6px";
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = "sel-group";
-      input.value = String(g.id);
-      label.appendChild(input);
-      const span = document.createElement("span");
-      span.textContent = `${g.name} (id=${g.id}, ${g.personsCount} чел.)`;
-      label.appendChild(span);
-      box.appendChild(label);
-    }
-  }
-
-  // Суммарная загрузка по людям и цвет цифры
+  // --------------------- usage ---------------------
   function updateUsage(bookings, capacity, groupsById) {
     const totalPersons = (Array.isArray(bookings) ? bookings : []).reduce((acc, b) => {
       const pc = groupsById.get?.(Number(b.groupId))?.personsCount;
@@ -283,12 +410,11 @@
     const usageEl = el("usage-line");
     usageEl.textContent = `${totalPersons} / ${capacity}`;
 
-    // цвет (зелёный/оранжевый/красный)
     const ratio = capacity > 0 ? totalPersons / capacity : 0;
     let color = "";
-    if (ratio > 1) color = "#d32f2f";           // красный
-    else if (ratio >= 0.8) color = "#ed6c02";   // оранжевый
-    else color = "#2e7d32";                     // зелёный
+    if (ratio > 1) color = "#d32f2f";
+    else if (ratio >= 0.8) color = "#ed6c02";
+    else color = "#2e7d32";
     usageEl.style.color = color;
   }
 
@@ -309,15 +435,17 @@
     }
   }
 
+  // --------------------- buttons ---------------------
   (function bindButtons() {
     el("d-close")?.addEventListener("click", closeDrawer);
     el("overlay")?.addEventListener("click", closeDrawer);
 
     el("save-book")?.addEventListener("click", async () => {
       try {
-        const selected = document.querySelector('input[name="sel-group"]:checked');
-        if (!selected) { alert("Выберите группу."); return; }
-        await saveBooking(Number(selected.value));
+        const selectedGroup = document.querySelector('input[name="sel-group"]:checked');
+        if (!selectedGroup) { alert("Выберите группу."); return; }
+        if (!Number.isFinite(state.selectedTeacherId)) { alert("Выберите преподавателя."); return; }
+        await saveBooking(Number(selectedGroup.value));
         const bookings = await fetchCurrentBookings(state.current);
         state.lastBookings = bookings;
         renderCurrentBookings(bookings, groupsCache.byId);
@@ -369,5 +497,6 @@
     });
   })();
 
+  // --------------------- export ---------------------
   window.RoomDrawer = { open: openDrawer, close: closeDrawer };
 })();
