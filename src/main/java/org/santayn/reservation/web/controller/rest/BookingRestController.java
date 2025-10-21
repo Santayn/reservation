@@ -1,13 +1,17 @@
+// org/santayn/reservation/web/controller/rest/BookingRestController.java
 package org.santayn.reservation.web.controller.rest;
 
 import jakarta.validation.Valid;
 import java.net.URI;
-import java.time.DayOfWeek;
+import java.time.*;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.santayn.reservation.models.booking.Booking;
+import org.santayn.reservation.models.schedule.ScheduleSlot;
 import org.santayn.reservation.models.schedule.WeekParityType;
+import org.santayn.reservation.repositories.ScheduleSlotRepository;
+import org.santayn.reservation.service.AuthTeacherService;
 import org.santayn.reservation.service.BookingService;
 import org.santayn.reservation.web.dto.booking.BookingCreateRequest;
 import org.santayn.reservation.web.dto.booking.BookingResponse;
@@ -15,8 +19,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.santayn.reservation.service.AuthTeacherService;
 
+/**
+ * ВАЖНО: для разовой брони преподавателя клиент присылает поле date (LocalDate, yyyy-MM-dd).
+ * Контроллер высчитывает expiresAt по окончанию слота в зоне Europe/Berlin.
+ */
 @RestController
 @RequestMapping(value = "/api/bookings", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
@@ -24,12 +31,29 @@ public class BookingRestController {
 
     private final BookingService service;
     private final AuthTeacherService authTeacherService;
+    private final ScheduleSlotRepository scheduleSlotRepository;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody BookingCreateRequest r) {
-        Booking created = service.create(toEntity(r));
-        return ResponseEntity
-                .created(URI.create("/api/bookings/" + created.getId()))
+        Booking draft = toEntity(r);
+
+        // По дате из UI строим момент окончания в конце выбранного слота
+        Instant expiresAt = null;
+        if (r.getDate() != null) {
+            ScheduleSlot slot = scheduleSlotRepository.findById(r.getSlotId())
+                    .orElseThrow(() -> new IllegalArgumentException("Слот не найден: " + r.getSlotId()));
+
+            // ScheduleSlot.getEndAt() -> LocalDateTime: берём только время конца
+            LocalTime endTime = slot.getEndAt().toLocalTime();
+
+            // дата (из UI) + время конца слота -> Instant в TZ
+            LocalDateTime endDateTime = LocalDateTime.of(r.getDate(), endTime);
+            ZoneId zone = ZoneId.of("Europe/Berlin"); // при необходимости поменяйте
+            expiresAt = endDateTime.atZone(zone).toInstant();
+        }
+
+        Booking created = service.createAsCurrentUser(draft, r.getDate(), expiresAt);
+        return ResponseEntity.created(URI.create("/api/bookings/" + created.getId()))
                 .body(toResponse(created));
     }
 
@@ -48,29 +72,16 @@ public class BookingRestController {
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<BookingResponse> update(@PathVariable Long id, @Valid @RequestBody BookingCreateRequest r) {
-        Booking updated = service.update(id, toEntity(r));
+        Booking updated = service.updateAsCurrentUser(id, toEntity(r));
         return ResponseEntity.ok(toResponse(updated));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        service.delete(id);
+        service.deleteAsCurrentUser(id);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Поиск броней по дню/чётности/слоту.
-     * classroomId опционален: если не указан — ищем по всем аудиториям.
-     *
-     * Чётность — СТРОГО:
-     *  - ANY  → возвращаем только записи с weekParityType = ANY;
-     *  - EVEN → только EVEN;
-     *  - ODD  → только ODD.
-     *
-     * slim:
-     *  - slim=true или classroomId=null → облегчённый ответ (BookingSlimResponse);
-     *  - иначе — полный BookingResponse.
-     */
     @GetMapping("/search")
     public ResponseEntity<List<?>> search(
             @RequestParam DayOfWeek dayOfWeek,
@@ -95,7 +106,7 @@ public class BookingRestController {
         }
     }
 
-    /** Расписание для текущего авторизованного пользователя, если он НЕ админ. */
+    /** Расписание для текущего авторизованного преподавателя. */
     @GetMapping("/my")
     public ResponseEntity<List<BookingResponse>> mySchedule(
             @RequestParam(required = false) DayOfWeek dayOfWeek,
@@ -117,7 +128,7 @@ public class BookingRestController {
                 .slotId(r.getSlotId())
                 .classroomId(r.getClassroomId())
                 .groupId(r.getGroupId())
-                .teacherId(r.getTeacherId())
+                .teacherId(r.getTeacherId()) // у препода подменяется на его ID
                 .build();
     }
 
@@ -135,12 +146,7 @@ public class BookingRestController {
     }
 
     /** Облегчённый ответ для агрегированных запросов. */
-    public record BookingSlimResponse(
-            Long id,
-            Long classroomId,
-            Long groupId,
-            Integer floor
-    ) {
+    public record BookingSlimResponse(Long id, Long classroomId, Long groupId, Integer floor) {
         public static BookingSlimResponse from(Booking b) {
             return new BookingSlimResponse(b.getId(), b.getClassroomId(), b.getGroupId(), b.getFloor());
         }

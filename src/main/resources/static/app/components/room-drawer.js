@@ -1,52 +1,53 @@
 // room-drawer.js
-// Используем slotId из селекта, никаких локальных слотов.
-// Чипы текущих групп кликабельны — удаляют именно свою бронь.
-// Обновлено:
-//  - корректное имя группы (displayName из нескольких возможных полей)
-//  - в списке преподавателей показывается login — Full Name (id=...)
+// Используем slotId из селекта. Чипы групп кликабельны (удаляют свою бронь).
+// Показываем преподавателей как: login — Full Name (id=...).
+// При сохранении передаём date (yyyy-MM-dd) из #date-input.
 
 (function () {
   "use strict";
 
-  const $ = (sel) => document.querySelector(sel);
-  const el = (id) => document.getElementById(id);
+  const $  = (sel) => document.querySelector(sel);
+  const el = (id)  => document.getElementById(id);
 
   const state = {
     open: false,
     current: null,
     lastBookings: [],
-    selectedTeacherId: null
+    selectedTeacherId: null,
   };
 
-  // Кэш справочника аудиторий (по name -> id и id -> id)
+  // Индекс аудиторий
   const classroomIndex = { byName: new Map(), byId: new Map(), loaded: false };
 
   // Кэши
   const groupsCache   = { list: [], byId: new Map() };
   const teachersCache = { list: [], byId: new Map(), loaded: false };
 
-  // --------------------- helpers ---------------------
+  // ---------------- helpers ----------------
   async function apiGet(url) {
-    const r = await fetch(url);
+    const r = await fetch(url, { credentials: "include" });
     if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
     return r.json();
   }
   async function apiPut(url, body) {
     const r = await fetch(url, {
       method: "PUT",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!r.ok) throw new Error((await r.text()) || `PUT ${url} -> ${r.status}`);
     return r.json?.() ?? null;
   }
-
   function firstText(...vals) {
     for (const v of vals) {
       const s = v == null ? "" : String(v).trim();
       if (s) return s;
     }
     return "";
+  }
+  function getSelectedDateStr() {
+    return document.querySelector("#date-input")?.value?.trim() || null; // yyyy-MM-dd
   }
 
   async function ensureClassroomsIndex() {
@@ -74,21 +75,21 @@
     throw new Error(`Не удалось определить PK аудитории для "${name || idAsName || "?"}"`);
   }
 
-  // --------------------- drawer ---------------------
+  // ---------------- drawer ----------------
   function openDrawer(roomCtx) {
     state.open = true;
     state.current = roomCtx;
     state.selectedTeacherId = null;
 
     el("d-room").textContent = roomCtx.roomName;
-    el("d-cap").textContent = String(roomCtx.capacity ?? 0);
+    el("d-cap").textContent  = String(roomCtx.capacity ?? 0);
     el("d-slot").textContent = roomCtx.slot?.label || "—";
-    el("d-by").textContent = "—";
+    el("d-by").textContent   = "—";
 
     // очистка UI
-    el("groups-box").innerHTML = "";
-    ensureTeacherSelectUI();         // создаём блок с <select>
-    resetTeacherSelect();            // очищаем значение
+    el("groups-box").innerHTML   = "";
+    ensureTeacherSelectUI();
+    resetTeacherSelect();
     el("current-chips").innerHTML = "—";
     el("usage-line").textContent = `0 / ${roomCtx.capacity ?? 0}`;
 
@@ -101,11 +102,11 @@
       };
     }
 
-    // грузим текущие брони + справочники
+    // загрузки
     Promise.all([
       fetchCurrentBookings(roomCtx).catch(() => []),
       fetchGroups().catch(() => []),
-      fetchTeachers().catch(() => [])
+      fetchTeachers().catch(() => []),
     ])
     .then(([bookings]) => {
       state.lastBookings = bookings;
@@ -134,22 +135,17 @@
     $("#drawer").setAttribute("aria-hidden", "true");
   }
 
-  // --------------------- data loads ---------------------
+  // ------------- data loads -------------
   async function fetchGroups() {
     try {
       const data = await apiGet("/api/groups?size=1000");
       const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
       const mapped = arr.map((g) => {
         const id = Number(g.id);
-        // Нормализованное имя группы
         const displayName = firstText(
           g.name, g.title, g.groupName, g.shortName, g.code, g.number, g.label
         ) || `Группа ${id}`;
-      return {
-          id,
-          displayName,
-          personsCount: Number(g.personsCount) || 0,
-        };
+        return { id, displayName, personsCount: Number(g.personsCount) || 0 };
       });
       groupsCache.list = mapped;
       groupsCache.byId = new Map(mapped.map((g) => [g.id, g]));
@@ -162,14 +158,14 @@
     try {
       const data = await apiGet("/api/teachers?size=1000");
       const arr = Array.isArray(data) ? data : Array.isArray(data.content) ? data.content : [];
-      const mapped = arr.map(t => {
+      const mapped = arr.map((t) => {
         const id = Number(t.id);
         const fullName = firstText(t.fullName, t.name) || `Преподаватель ${id}`;
-        const login = firstText(t.login, t.username, t.userLogin, t.user?.login) || "—";
+        const login    = firstText(t.login, t.username, t.userLogin, t.user?.login) || "—";
         return { id, fullName, login };
-      }).filter(t => Number.isFinite(t.id));
+      }).filter((t) => Number.isFinite(t.id));
       teachersCache.list = mapped;
-      teachersCache.byId = new Map(mapped.map(t => [t.id, t]));
+      teachersCache.byId = new Map(mapped.map((t) => [t.id, t]));
       teachersCache.loaded = true;
       return mapped;
     } catch { return []; }
@@ -178,16 +174,16 @@
   async function fetchCurrentBookings(ctx) {
     const params = new URLSearchParams({
       classroomId: String(ctx.classroomId),
-      dayOfWeek: ctx.dayOfWeek || "",
+      dayOfWeek:   ctx.dayOfWeek || "",
       weekParityType: ctx.weekParityType || "ANY",
-      slotId: String(ctx.slot?.id || 0),
+      slotId:      String(ctx.slot?.id || 0),
     });
-    const r = await fetch(`/api/bookings/search?${params.toString()}`);
+    const r = await fetch(`/api/bookings/search?${params.toString()}`, { credentials: "include" });
     if (!r.ok) return [];
     return r.json();
   }
 
-  // --------------------- save / delete ---------------------
+  // ------------- save / delete -------------
   async function saveBooking(selectedGroupId) {
     if (!state.current) return;
     if (!Number.isFinite(state.selectedTeacherId)) {
@@ -197,16 +193,19 @@
 
     const ctx = state.current;
     const body = {
-      dayOfWeek: ctx.dayOfWeek,
-      floor: ctx.floor,
+      dayOfWeek:      ctx.dayOfWeek,
+      floor:          ctx.floor,
       weekParityType: ctx.weekParityType,
-      slotId: ctx.slot?.id || 0,
-      classroomId: ctx.classroomId,
-      groupId: selectedGroupId,
-      teacherId: state.selectedTeacherId   // <— обязательное поле
+      slotId:         ctx.slot?.id || 0,
+      classroomId:    ctx.classroomId,
+      groupId:        selectedGroupId,
+      teacherId:      state.selectedTeacherId,
+      date:           getSelectedDateStr(), // yyyy-MM-dd или null
     };
+
     const r = await fetch("/api/bookings", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
@@ -219,7 +218,7 @@
     const list = await fetchCurrentBookings(state.current);
     if (!list.length) throw new Error("Нет текущих бронирований для удаления.");
     for (const b of list) {
-      const r = await fetch(`/api/bookings/${b.id}`, { method: "DELETE" });
+      const r = await fetch(`/api/bookings/${b.id}`, { method: "DELETE", credentials: "include" });
       if (!r.ok) throw new Error((await r.text()) || `Ошибка удаления (${r.status})`);
     }
   }
@@ -227,13 +226,13 @@
   async function deleteBookingForGroup(groupId) {
     if (!state.current) return;
     const list = await fetchCurrentBookings(state.current);
-    const victim = list.find(b => Number(b.groupId) === Number(groupId));
+    const victim = list.find((b) => Number(b.groupId) === Number(groupId));
     if (!victim) throw new Error("Бронирование этой группы не найдено.");
-    const r = await fetch(`/api/bookings/${victim.id}`, { method: "DELETE" });
+    const r = await fetch(`/api/bookings/${victim.id}`, { method: "DELETE", credentials: "include" });
     if (!r.ok) throw new Error((await r.text()) || `Ошибка удаления (${r.status})`);
   }
 
-  // --------------------- render ---------------------
+  // --------------- render ----------------
   function renderCurrentBookings(bookings, groupsById) {
     const box = el("d-by");
     const chipsWrap = el("current-chips");
@@ -247,8 +246,8 @@
     const names = [];
     chipsWrap.innerHTML = "";
     for (const b of bookings) {
-      const gid = Number(b.groupId);
-      const g = groupsById.get?.(gid);
+      const gid  = Number(b.groupId);
+      const g    = groupsById.get?.(gid);
       const name = g?.displayName ?? String(gid);
       const pcs  = Number(g?.personsCount ?? 0);
       names.push(name);
@@ -265,7 +264,11 @@
           const fresh = await fetchCurrentBookings(state.current);
           state.lastBookings = fresh;
           renderCurrentBookings(fresh, groupsCache.byId);
-          updateUsage(fresh, Number(el("c-cap").value) || (state.current?.capacity || 0), groupsCache.byId);
+          updateUsage(
+            fresh,
+            Number(el("c-cap").value) || (state.current?.capacity || 0),
+            groupsCache.byId
+          );
           window.planRefreshOccupancy?.();
         } catch (e) {
           alert(e.message || "Не удалось удалить группу.");
@@ -285,19 +288,22 @@
       label.style.display = "flex";
       label.style.alignItems = "center";
       label.style.gap = "6px";
+
       const input = document.createElement("input");
       input.type = "radio";
       input.name = "sel-group";
       input.value = String(g.id);
       label.appendChild(input);
+
       const span = document.createElement("span");
       span.textContent = `${g.displayName} (id=${g.id}, ${g.personsCount} чел.)`;
       label.appendChild(span);
+
       box.appendChild(label);
     }
   }
 
-  // --- Преподаватели: выпадающий список (логин — ФИО) ---
+  // --- Преподаватели ---
   function ensureTeacherSelectUI() {
     if (el("teacher-section")) return;
     const drawer = $("#drawer .drawer-content") || $("#drawer");
@@ -317,13 +323,9 @@
       </select>
     `;
 
-    // Вставим ПЕРЕД списком групп, если он есть
     const groupsBox = el("groups-box");
-    if (groupsBox?.parentElement) {
-      groupsBox.parentElement.insertBefore(section, groupsBox);
-    } else {
-      drawer?.appendChild(section);
-    }
+    if (groupsBox?.parentElement) groupsBox.parentElement.insertBefore(section, groupsBox);
+    else drawer?.appendChild(section);
 
     const sel = el("teacher-select");
     if (sel && !sel._bound) {
@@ -337,16 +339,12 @@
 
   function resetTeacherSelect() {
     const sel = el("teacher-select");
-    if (sel) {
-      sel.value = "";
-      state.selectedTeacherId = null;
-    }
+    if (sel) { sel.value = ""; state.selectedTeacherId = null; }
   }
 
   function fillTeacherSelect(list) {
     const sel = el("teacher-select");
     if (!sel) return;
-    // очистить, добавить "—"
     sel.innerHTML = "";
     const opt0 = document.createElement("option");
     opt0.value = "";
@@ -354,17 +352,16 @@
     sel.appendChild(opt0);
 
     for (const t of list) {
-      const text = `${t.login} — ${t.fullName} (id=${t.id})`;
       const opt = document.createElement("option");
       opt.value = String(t.id);
-      opt.textContent = text;
+      opt.textContent = `${t.login} — ${t.fullName} (id=${t.id})`;
       sel.appendChild(opt);
     }
     sel.value = "";
     state.selectedTeacherId = null;
   }
 
-  // --------------------- room meta ---------------------
+  // ------------- room meta -------------
   async function hydrateRoomMeta(classroomPk) {
     const [buildings, faculties, specs] = await Promise.all([
       loadBuildings().catch(() => []),
@@ -400,13 +397,12 @@
     return arr.map((s) => ({ id: s.id, name: s.name || s.title || `Специализация ${s.id}` }));
   }
 
-  // --------------------- usage ---------------------
+  // ------------- usage -------------
   function updateUsage(bookings, capacity, groupsById) {
     const totalPersons = (Array.isArray(bookings) ? bookings : []).reduce((acc, b) => {
       const pc = groupsById.get?.(Number(b.groupId))?.personsCount;
       return acc + (Number.isFinite(pc) ? pc : 0);
     }, 0);
-
     const usageEl = el("usage-line");
     usageEl.textContent = `${totalPersons} / ${capacity}`;
 
@@ -435,7 +431,7 @@
     }
   }
 
-  // --------------------- buttons ---------------------
+  // ------------- buttons -------------
   (function bindButtons() {
     el("d-close")?.addEventListener("click", closeDrawer);
     el("overlay")?.addEventListener("click", closeDrawer);
@@ -445,11 +441,17 @@
         const selectedGroup = document.querySelector('input[name="sel-group"]:checked');
         if (!selectedGroup) { alert("Выберите группу."); return; }
         if (!Number.isFinite(state.selectedTeacherId)) { alert("Выберите преподавателя."); return; }
+
         await saveBooking(Number(selectedGroup.value));
+
         const bookings = await fetchCurrentBookings(state.current);
         state.lastBookings = bookings;
         renderCurrentBookings(bookings, groupsCache.byId);
-        updateUsage(bookings, Number(el("c-cap").value) || (state.current?.capacity || 0), groupsCache.byId);
+        updateUsage(
+          bookings,
+          Number(el("c-cap").value) || (state.current?.capacity || 0),
+          groupsCache.byId
+        );
         window.planRefreshOccupancy?.();
         alert("Бронирование сохранено.");
       } catch (e) {
@@ -463,7 +465,11 @@
         const bookings = await fetchCurrentBookings(state.current);
         state.lastBookings = bookings;
         renderCurrentBookings(bookings, groupsCache.byId);
-        updateUsage(bookings, Number(el("c-cap").value) || (state.current?.capacity || 0), groupsCache.byId);
+        updateUsage(
+          bookings,
+          Number(el("c-cap").value) || (state.current?.capacity || 0),
+          groupsCache.byId
+        );
         window.planRefreshOccupancy?.();
         alert("Бронирование снято.");
       } catch (e) {
@@ -477,9 +483,9 @@
         const classroomPk = await resolveClassroomPk(state.current);
 
         const capVal = Number(el("c-cap").value);
-        const bVal = el("c-building").value?.trim();
-        const fVal = el("c-faculty").value?.trim();
-        const sVal = el("c-spec").value?.trim();
+        const bVal   = el("c-building").value?.trim();
+        const fVal   = el("c-faculty").value?.trim();
+        const sVal   = el("c-spec").value?.trim();
 
         const body = {
           capacity: Number.isFinite(capVal) ? capVal : 0,
@@ -497,6 +503,6 @@
     });
   })();
 
-  // --------------------- export ---------------------
+  // export
   window.RoomDrawer = { open: openDrawer, close: closeDrawer };
 })();

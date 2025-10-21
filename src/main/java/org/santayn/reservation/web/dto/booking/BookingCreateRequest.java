@@ -3,6 +3,8 @@ package org.santayn.reservation.web.dto.booking;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -42,4 +44,6 @@ public class BookingCreateRequest {
 
     /** ID преподавателя (опционально — можно не указывать). */
     private Long teacherId;
+
+    private LocalDate date;
 }

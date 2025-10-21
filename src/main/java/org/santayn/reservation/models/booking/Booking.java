@@ -80,4 +80,20 @@ public class Booking {
     /** ID преподавателя (опционально; выбирается по имени на UI, сохраняем его id). */
     @Column(name = "teacher_id")
     private Long teacherId;
+
+    /** Кто создал бронь (любой пользователь). */
+    @Column(name = "created_by_user_id", nullable = false)
+    private Long createdByUserId;
+
+    /** Признак, что бронь создана админом (препод не может менять/удалять). */
+    @Column(name = "created_by_admin", nullable = false)
+    private boolean createdByAdmin;
+
+    /** Конкретная дата разовой брони (для «вечных» админских расписаний null). */
+    @Column(name = "booking_date")
+    private java.time.LocalDate bookingDate;
+
+    /** Время окончания слота (UTC) — по нему чистим разовые брони преподов. */
+    @Column(name = "expires_at")
+    private java.time.Instant expiresAt;
 }

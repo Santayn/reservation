@@ -38,7 +38,7 @@
           id,
           name: nm,
           floor: Number(c.floor ?? 0),
-          corpus: c.corpus || c.building || "", // если есть в БД
+          corpus: c.corpus || c.building || "",
           facultyIds: Array.isArray(c.facultyIds) ? c.facultyIds.map(Number) : [],
           specializationIds: Array.isArray(c.specializationIds) ? c.specializationIds.map(Number) : []
         };
@@ -116,14 +116,15 @@
     return `${hh}:${mm}`;
   }
 
-  // ===== Даты =====
+  // ===== Дата (одно поле) =====
   function initDates(){
-    const start=$("#date-input"), end=$("#date-end-input");
-    const iso = d => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
-    const todayStr = iso(new Date());
+    const start = document.querySelector("#date-input");
+    const toISODate = d => new Date(d.getTime() - d.getTimezoneOffset()*60000)
+                            .toISOString().slice(0,10);
+    const todayStr = toISODate(new Date());
     if (start && !start.value) start.value = todayStr;
-    if (end   && !end.value)   end.value   = todayStr;
   }
+
 
   // ===== Фильтр по факультету/спецу =====
   function initFilterMenu(){
@@ -238,7 +239,7 @@
 
   // === Подсветка заполняемости (по людям) ===
   async function refreshOccupancy(){
-    const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek:"", weekParityType:"ANY" };
+    const sched = window.SchedulePanel?.getSettings?.() || { dayOfWeek:"", weekParityType:"ANY", myOnly:false };
     if (!sched.dayOfWeek){
       const dateStr = $("#date-input")?.value || "";
       sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
@@ -246,8 +247,8 @@
     const weekParityType = $("#sch-weektype")?.value || sched.weekParityType || "ANY";
     const slotId = Number($("#slot-filter")?.value || 0);
 
-    // оптимизация: один агрегированный запрос на слот
-    const slim = await fetchAllBookings(sched.dayOfWeek, weekParityType, slotId);
+    // один агрегированный запрос на слот: /search?slim=true или /my
+    const slim = await fetchAllBookings(sched.dayOfWeek, weekParityType, slotId, !!sched.myOnly);
 
     const usedByRoom = new Map(); // classroomId -> persons
     for (const b of slim) {
@@ -267,11 +268,14 @@
     }
   }
 
-  async function fetchAllBookings(dayOfWeek, weekParityType, slotId){
+  // Универсальный агрегированный запрос: all vs my
+  async function fetchAllBookings(dayOfWeek, weekParityType, slotId, myOnly){
     const params = new URLSearchParams({
-      dayOfWeek, weekParityType, slotId:String(slotId), slim:"true"
+      dayOfWeek, weekParityType, slotId:String(slotId)
     });
-    const r = await fetch(`/api/bookings/search?${params.toString()}`, { credentials:"include" });
+    const baseUrl = myOnly ? "/api/bookings/my" : "/api/bookings/search";
+    if (!myOnly) params.set("slim","true"); // для общего поиска берём облегчённые ответы
+    const r = await fetch(`${baseUrl}?${params.toString()}`, { credentials:"include" });
     return r.ok ? r.json() : [];
   }
 
@@ -313,4 +317,4 @@
   }
 
   window.planRefreshOccupancy = refreshOccupancy;
-})()
+})();

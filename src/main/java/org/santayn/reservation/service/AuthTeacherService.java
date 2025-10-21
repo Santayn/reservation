@@ -23,11 +23,21 @@ public class AuthTeacherService {
         return auth.getName();
     }
 
-    /** Возвращает ID пользователя-преподавателя (user.isAdmin == false). */
-    public Long currentTeacherId() {
+    /** Текущий пользователь (и админ, и препод). */
+    public User currentUser() {
         String login = currentLogin();
-        User user = userRepository.findByLoginIgnoreCase(login)
+        return userRepository.findByLoginIgnoreCase(login)
                 .orElseThrow(() -> new IllegalStateException("Пользователь не найден: " + login));
+    }
+
+    /** Текущий пользователь — админ? */
+    public boolean isAdmin() {
+        return currentUser().isAdmin();
+    }
+
+    /** ID текущего пользователя, если он препод (isAdmin=false). */
+    public Long currentTeacherId() {
+        User user = currentUser();
         if (user.isAdmin()) {
             throw new IllegalStateException("У администратора нет персонального расписания преподавателя");
         }
