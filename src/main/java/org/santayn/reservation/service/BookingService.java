@@ -1,4 +1,3 @@
-// org/santayn/reservation/service/BookingService.java
 package org.santayn.reservation.service;
 
 import java.time.DayOfWeek;
@@ -14,6 +13,12 @@ import org.santayn.reservation.repositories.BookingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Сервис для управления бронированиями аудиторий.
+ * Вариант 2 (через имя аудитории):
+ *  - Контроллер уже обязан передать корректный classroomId,
+ *    найденный по имени аудитории. Сервису приходит уже готовый Booking.
+ */
 @Service
 @RequiredArgsConstructor
 public class BookingService {
@@ -40,6 +45,11 @@ public class BookingService {
         existing.setClassroomId(updated.getClassroomId());
         existing.setGroupId(updated.getGroupId());
         existing.setTeacherId(updated.getTeacherId());
+        existing.setBookingDate(updated.getBookingDate());
+        existing.setExpiresAt(updated.getExpiresAt());
+        existing.setCreatedByAdmin(updated.isCreatedByAdmin());
+        existing.setCreatedByUserId(updated.getCreatedByUserId());
+
         return bookingRepository.save(existing);
     }
 
@@ -80,41 +90,52 @@ public class BookingService {
 
     /**
      * Создание брони текущим пользователем.
-     * - Преподаватель: только если окно свободно; teacherId подменяется на id пользователя,
-     *   требуется разовая дата и рассчитанный expiresAt.
-     * - Админ: без ограничений; постоянная бронь (bookingDate/expiresAt = null).
+     *
+     * - Преподаватель:
+     *   * можно только если окно свободно
+     *   * teacherId насильно ставится = текущий пользователь
+     *   * требуется разовая дата и рассчитанный expiresAt
+     *
+     * - Админ:
+     *   * может без ограничений
+     *   * постоянная бронь (bookingDate/expiresAt = null)
+     *
+     * Параметр booking уже должен содержать booking.classroomId,
+     * найденный по имени аудитории на контроллере (вариант 2).
      */
     @Transactional
-    public Booking createAsCurrentUser(Booking draft, LocalDate bookingDate, Instant expiresAt) {
-        var me = auth.currentUser(); // должен возвращать org.santayn.reservation.models.user.User
+    public Booking createAsCurrentUser(Booking booking, LocalDate bookingDate, Instant expiresAt) {
+        var me = auth.currentUser(); // возвращает текущего пользователя (User)
         boolean isAdmin = me.isAdmin();
 
         if (!isAdmin) {
             if (bookingDate == null || expiresAt == null) {
                 throw new IllegalArgumentException("Для разовой брони преподавателя требуются date и expiresAt.");
             }
+
             long cnt = bookingRepository.countInWindow(
-                    draft.getClassroomId(),
-                    draft.getDayOfWeek(),
-                    draft.getWeekParityType(),
-                    draft.getSlotId(),
+                    booking.getClassroomId(),
+                    booking.getDayOfWeek(),
+                    booking.getWeekParityType(),
+                    booking.getSlotId(),
                     bookingDate
             );
             if (cnt > 0) {
                 throw new IllegalStateException("Окно занято. Бронь невозможна.");
             }
-            draft.setTeacherId(me.getId());
-            draft.setBookingDate(bookingDate);
-            draft.setExpiresAt(expiresAt);
-            draft.setCreatedByAdmin(false);
+
+            booking.setTeacherId(me.getId());
+            booking.setBookingDate(bookingDate);
+            booking.setExpiresAt(expiresAt);
+            booking.setCreatedByAdmin(false);
         } else {
-            draft.setBookingDate(null);
-            draft.setExpiresAt(null);
-            draft.setCreatedByAdmin(true);
+            booking.setBookingDate(null);
+            booking.setExpiresAt(null);
+            booking.setCreatedByAdmin(true);
         }
 
-        draft.setCreatedByUserId(me.getId());
-        return bookingRepository.save(draft);
+        booking.setCreatedByUserId(me.getId());
+        return bookingRepository.save(booking);
     }
 
     /** Обновление с учётом прав. */
@@ -164,7 +185,6 @@ public class BookingService {
     /** Сервисная чистка просроченных разовых броней. */
     @Transactional
     public int cleanupExpired() {
-        // ВНИМАНИЕ: репозиторий теперь сам сравнивает с NOW() в БД и не принимает параметров
         return bookingRepository.deleteExpired();
     }
 }

@@ -23,4 +23,5 @@ public interface ClassroomRepository extends JpaRepository<Classroom, Long> {
      * Например, "102" найдёт "Ауд. 102".
      */
     Optional<Classroom> findFirstByNameContainingIgnoreCase(String token);
+    Optional<Classroom> findByNameIgnoreCase(String name);
 }

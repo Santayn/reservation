@@ -1,9 +1,11 @@
-// plan-page.js
+// plan-page.js (исправленная версия под вариант 2)
 // Логика:
 // 1. грузим корпуса (/api/buildings) -> building-select
 // 2. при выборе корпуса грузим этажи этого корпуса (/api/layouts/by-building/{buildingId}) -> layout-select
 // 3. при выборе layout грузим её JSON (/api/layouts/{layoutId}) и рисуем абсолютными координатами
-// остальная логика бронирования / подсветок остаётся
+// 4. запрашиваем бронирования с бэка, используя настоящий classroomDbId (id из таблицы classrooms),
+//    а не "угаданное" число из текста аудитории
+// 5. при сохранении брони потом будем слать classroomName, а не classroomId
 
 (function () {
   "use strict";
@@ -65,6 +67,13 @@
     }
   }
 
+  // удобный хелпер: получить настоящий PK аудитории по её имени с плана
+  function getRealClassroomIdByName(roomName) {
+    if (!roomName) return null;
+    const meta = RoomsMeta.byName.get(roomName.trim());
+    return meta ? Number(meta.id) : null;
+  }
+
   // ===== Кэш слотов =====
   const slotsMap = new Map(); // id -> {id,label}
 
@@ -104,28 +113,28 @@
   // =========================
 
   async function initBuildingsAndLayoutsFlow() {
-    // 1. подгружаем корпуса
+    // 1. загрузить корпуса
     await loadBuildings();
     fillBuildingSelect();
 
-    // 2. повесим change на корпус
+    // 2. обработчик смены корпуса
     bindBuildingChangeHandler();
 
-    // если есть хотя бы один корпус — выберем первый автоматически
+    // выбрать первый корпус автоматически (если есть)
     if (LayoutState.buildings.length > 0) {
       LayoutState.currentBuildingId = LayoutState.buildings[0].id;
       $("#building-select").value = String(LayoutState.currentBuildingId);
       await loadLayoutsForBuilding(LayoutState.currentBuildingId);
       fillLayoutSelect();
     } else {
-      // нет корпусов => очистим layout-select
+      // корпусов нет -> нет этажей
       clearLayoutSelect("— нет этажей —");
     }
 
-    // 3. change на layout
+    // 3. обработчик смены схемы этажа
     bindLayoutChangeHandler();
 
-    // 4. если есть схемы у выбранного корпуса — выберем первую
+    // 4. выбрать первый этаж автоматически (если есть)
     const curList = LayoutState.layoutsByBuilding.get(LayoutState.currentBuildingId) || [];
     if (curList.length > 0) {
         LayoutState.currentLayoutId = curList[0].id;
@@ -147,7 +156,6 @@
       const r = await fetch("/api/buildings", { credentials:"include" });
       if (!r.ok) { LayoutState.buildings = []; return; }
       const data = await r.json();
-      // контроллер нам уже возвращает [{id, name}, ...]
       LayoutState.buildings = Array.isArray(data) ? data : [];
     } catch (e) {
       console.error("Ошибка загрузки корпусов", e);
@@ -186,20 +194,21 @@
       LayoutState.currentBuildingId = (bId==null || Number.isNaN(bId)) ? null : bId;
 
       if (LayoutState.currentBuildingId == null) {
-        // сбрасываем этажи
+        // сбрасываем этажи и план
         clearLayoutSelect("— выберите корпус —");
         LayoutState.currentLayoutId = null;
         LayoutState.currentLayoutData = null;
         applyHeaderInfo();
         renderBuildingPlanFromLayout();
+        refreshOccupancy(); // пересчёт, будет пусто
         return;
       }
 
-      // загружаем этажи для выбранного корпуса
+      // загрузить этажи для выбранного корпуса
       await loadLayoutsForBuilding(LayoutState.currentBuildingId);
       fillLayoutSelect();
 
-      // выбираем первый этаж автоматически
+      // выбрать первый этаж автоматически
       const list = LayoutState.layoutsByBuilding.get(LayoutState.currentBuildingId) || [];
       if (list.length > 0) {
         LayoutState.currentLayoutId = list[0].id;
@@ -212,6 +221,7 @@
 
       applyHeaderInfo();
       renderBuildingPlanFromLayout();
+      refreshOccupancy();
     });
   }
 
@@ -228,7 +238,6 @@
         return;
       }
       const data = await r.json();
-      // бэк возвращает [{id, name, buildingId, floorNumber, layoutJson (может быть)}...]
       const list = Array.isArray(data) ? data : [];
       LayoutState.layoutsByBuilding.set(buildingId, list);
     } catch (e) {
@@ -293,6 +302,7 @@
       await loadCurrentLayoutFull();
       applyHeaderInfo();
       renderBuildingPlanFromLayout();
+      refreshOccupancy();
     });
   }
 
@@ -358,7 +368,6 @@
 
     const data = LayoutState.currentLayoutData;
     if (!data || !data.layoutJson) {
-      // если нет выбранной схемы или нет layoutJson — просто очистим контейнер
       container.innerHTML = "";
       return;
     }
@@ -394,7 +403,7 @@
     stage.style.margin = "0 auto";
     stage.style.overflow = "hidden";
 
-    // заголовок на сцене
+    // заголовок этажа прямо на плане
     const title = document.createElement("div");
     title.textContent = `Этаж ${floorNum}`;
     title.style.position = "absolute";
@@ -413,7 +422,7 @@
     container.innerHTML = "";
     container.appendChild(stage);
 
-    // навесить клики по комнатам и обновить подсветку занятости
+    // после перерисовки навешиваем клики и обновляем легенду занятости
     initRooms();
     attachRefreshHandlers();
     refreshOccupancy();
@@ -434,19 +443,66 @@
     return { maxX, maxY };
   }
 
+  // ВАЖНО: аудитории больше не получают инлайновые цвета.
+  // Их фон и рамка теперь управляются ТОЛЬКО классами (.room, .room.ok, .room.warn и т.д.).
+  // Остальные элементы (коридоры, стены и т.п.) оставляем как раньше.
   function createNodeForElement(el){
-    const base = document.createElement(
-      el.type === "room" ? "button" : "div"
-    );
+    // Если это аудитория (кабинет)
+    if (el.type === "room") {
+      const base = document.createElement("button");
+
+      const x = Number(el.x || 0);
+      const y = Number(el.y || 0);
+      const w = Number(el.width || 0) || 0;
+      const h = Number(el.height || 0) || 0;
+
+      // позиционирование
+      base.style.position = "absolute";
+      base.style.left = x + "px";
+      base.style.top = y + "px";
+      base.style.width = w + "px";
+      base.style.height = h + "px";
+
+      // НЕ ставим backgroundColor / borderColor / borderWidth инлайном!
+      // Эти вещи задаёт CSS (.room, .room.ok, .room.warn, ...)
+      base.style.boxSizing = "border-box";
+      base.style.display = "flex";
+      base.style.alignItems = "center";
+      base.style.justifyContent = "center";
+      base.style.padding = "6px";
+      base.style.fontSize = "13px";
+      base.style.lineHeight = "1.2";
+      base.style.userSelect = "none";
+      // скругление и т.д. тоже уже есть в CSS .room, так что не задаём инлайном
+
+      base.setAttribute("type", "button");
+      base.style.cursor = "pointer";
+      base.style.backgroundClip = "padding-box";
+      base.style.appearance = "none";
+      base.style.webkitAppearance = "none";
+
+      const rn  = el.roomName || "Ауд. ?";
+      const cap = Number(el.capacity || 0);
+      base.textContent = `${rn} (${cap})`;
+
+      base.classList.add("room");
+      base.dataset.room = rn;
+      base.dataset.capacity = String(cap);
+
+      return base;
+    }
+
+    // Любой другой элемент схемы (коридор, стенка и т.п.)
+    const base = document.createElement("div");
 
     const x = Number(el.x || 0);
     const y = Number(el.y || 0);
+
     const w = Number(el.width || (el.type==="round" ? el.height : 0)) || 0;
     const h = el.type === "round"
       ? (Number(el.width || 0) || 0)
       : (Number(el.height || 0) || 0);
 
-    // позиционирование
     base.style.position = "absolute";
     base.style.left = x + "px";
     base.style.top = y + "px";
@@ -461,14 +517,15 @@
     base.style.lineHeight = "1.2";
     base.style.userSelect = "none";
 
-    // обводка/заливка
+    // Для НЕ-аудиторий оставляем inline-цвета из layoutJson,
+    // это не мешает раскраске аудиторий.
     base.style.backgroundColor = el.fill || "#fff";
     base.style.borderColor = el.stroke || "#000";
     base.style.borderStyle = el.strokeStyle || "solid";
     base.style.borderWidth = "2px";
     base.style.color = "#111";
+    base.style.borderRadius = "6px";
 
-    // форма
     if (el.type === "round" || el.type === "oval") {
       base.style.borderRadius = "50%";
     } else if (el.type === "semicircle") {
@@ -476,27 +533,11 @@
       base.style.borderTopRightRadius = (h * 2) + "px";
       base.style.borderBottomLeftRadius = "0";
       base.style.borderBottomRightRadius = "0";
-    } else {
-      base.style.borderRadius = "6px";
     }
 
     // подпись
     let text = "";
     switch (el.type) {
-      case "room": {
-        const rn = el.roomName || "Ауд. ?";
-        const cap = Number(el.capacity || 0);
-        text = `${rn} (${cap})`;
-        base.classList.add("room");
-        base.dataset.room = rn;
-        base.dataset.capacity = String(cap);
-        base.setAttribute("type", "button");
-        base.style.cursor = "pointer";
-        base.style.backgroundClip = "padding-box";
-        base.style.appearance = "none";
-        base.style.webkitAppearance = "none";
-        break;
-      }
       case "corridor":
         text = el.labelText || "Коридор / зона";
         base.style.borderStyle = el.strokeStyle || "dashed";
@@ -671,8 +712,7 @@
 
       rooms.forEach(r => {
         const name = r.dataset.room || r.textContent.trim();
-        const id   = classroomIdFromRoom(name);
-        const meta = RoomsMeta.byId.get(id) || RoomsMeta.byName.get(name);
+        const meta = RoomsMeta.byName.get(name);
 
         const facMatch  = !facId  || (meta?.facultyIds || []).map(String).includes(facId);
         const specMatch = !specId || (meta?.specializationIds || []).map(String).includes(specId);
@@ -756,9 +796,10 @@
           sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
         }
 
-        const classroomId = classroomIdFromRoom(roomName);
+        // реальный PK из БД
+        const classroomDbId = getRealClassroomIdByName(roomName);
 
-        // снять прошлую подсветку
+        // снять прошлую .selected
         $all(".room").forEach(r => r.classList.remove("selected"));
         btn.classList.add("selected");
 
@@ -767,7 +808,7 @@
           capacity,
           floor: LayoutState.currentLayoutData?.floorNumber ?? null,
           slot,
-          classroomId,
+          classroomDbId,
           dayOfWeek: sched.dayOfWeek,
           weekParityType
         });
@@ -779,6 +820,7 @@
   // Подсветка заполняемости
   // =========================
   async function refreshOccupancy(){
+    // настройки расписания (день недели, моя ли только нагрузка и т.п.)
     const sched = window.SchedulePanel?.getSettings?.() || {
       dayOfWeek:"", weekParityType:"ANY", myOnly:false
     };
@@ -788,43 +830,55 @@
       sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
     }
 
+    const dayOfWeek      = sched.dayOfWeek;
     const weekParityType = $("#sch-weektype")?.value || sched.weekParityType || "ANY";
-    const slotId = Number($("#slot-filter")?.value || 0);
+    const slotId         = Number($("#slot-filter")?.value || 0);
+    const myOnly         = !!sched.myOnly;
 
-    const slim = await fetchAllBookings(
-      sched.dayOfWeek,
-      weekParityType,
-      slotId,
-      !!sched.myOnly
-    );
+    const rooms = $all(".room");
+    for (const btn of rooms) {
+      const roomName      = btn.dataset.room || btn.textContent.trim();
+      const capacity      = Number(btn.dataset.capacity || 0);
+      const classroomDbId = getRealClassroomIdByName(roomName);
 
-    const usedByRoom = new Map(); // classroomId -> persons total
-    for (const b of slim) {
-      const g = GroupsCache.byId.get(Number(b.groupId));
-      const add = g ? Number(g.personsCount || 0) : 0;
-      const cid = Number(b.classroomId);
-      usedByRoom.set(cid, (usedByRoom.get(cid) || 0) + add);
-    }
+      if (!classroomDbId || !slotId || !dayOfWeek) {
+        paintRoom(btn, 0, capacity);
+        continue;
+      }
 
-    for (const btn of $all(".room")) {
-      const roomName = btn.dataset.room || btn.textContent.trim();
-      const capacity = Number(btn.dataset.capacity || 0);
-      const classroomId = classroomIdFromRoom(roomName);
-      const used = usedByRoom.get(classroomId) || 0;
-      paintRoom(btn, used, capacity);
+      const usedPersons = await fetchUsageForRoom(
+        classroomDbId,
+        dayOfWeek,
+        weekParityType,
+        slotId,
+        myOnly
+      );
+
+      paintRoom(btn, usedPersons, capacity);
     }
   }
 
-  async function fetchAllBookings(dayOfWeek, weekParityType, slotId, myOnly){
+  async function fetchUsageForRoom(classroomDbId, dayOfWeek, weekParityType, slotId, myOnly){
     const params = new URLSearchParams({
       dayOfWeek,
       weekParityType,
-      slotId:String(slotId)
+      slotId: String(slotId),
+      classroomId: String(classroomDbId),
+      slim: "true"
     });
+
     const baseUrl = myOnly ? "/api/bookings/my" : "/api/bookings/search";
-    if (!myOnly) params.set("slim","true");
+
     const r = await fetch(`${baseUrl}?${params.toString()}`, { credentials:"include" });
-    return r.ok ? r.json() : [];
+    if (!r.ok) return 0;
+
+    const list = await r.json();
+    let total = 0;
+    for (const b of list){
+      const g = GroupsCache.byId.get(Number(b.groupId));
+      total += g ? Number(g.personsCount || 0) : 0;
+    }
+    return total;
   }
 
   function paintRoom(btn, usedPersons, capacity){
@@ -841,29 +895,19 @@
   }
 
   function attachRefreshHandlers(){
-    $("#date-input")   ?.addEventListener("change", refreshOccupancy);
-    $("#sch-weektype") ?.addEventListener("change", refreshOccupancy);
-    $("#sch-day")      ?.addEventListener("change", refreshOccupancy);
-    $("#slot-filter")  ?.addEventListener("change", refreshOccupancy);
-    $("#building-select")?.addEventListener("change", refreshOccupancy);
-    $("#layout-select")  ?.addEventListener("change", refreshOccupancy);
+    $("#date-input")      ?.addEventListener("change", refreshOccupancy);
+    $("#sch-weektype")    ?.addEventListener("change", refreshOccupancy);
+    $("#sch-day")         ?.addEventListener("change", refreshOccupancy);
+    $("#slot-filter")     ?.addEventListener("change", refreshOccupancy);
+    $("#building-select") ?.addEventListener("change", refreshOccupancy);
+    $("#layout-select")   ?.addEventListener("change", refreshOccupancy);
+
+    window.planRefreshOccupancy = refreshOccupancy;
   }
 
   // =========================
   // Утилиты
   // =========================
-  function classroomIdFromRoom(roomName){
-    // сейчас кабинет у нас не гарантированно numeric, поэтому делаем fallback
-    const m = String(roomName).match(/\d{3}/);
-    if (m) return Number(m[0]);
-
-    // fallback: хэш строки (стабильно в рамках сессии)
-    let hash = 1000;
-    for (let i=0;i<roomName.length;i++){
-      hash = (hash*31 + roomName.charCodeAt(i)) >>> 0;
-    }
-    return hash;
-  }
 
   function fillSelect(select, items){
     if (!select) return;
@@ -876,7 +920,24 @@
     }
   }
 
-  // экспорт чтобы другая логика могла дергать
-  window.planRefreshOccupancy = refreshOccupancy;
+  function highlightRoomExternal(roomName){
+    const norm = String(roomName || "").trim();
+    let targetBtn = null;
+    for (const btn of $all(".room")){
+      const nm = btn.dataset.room || btn.textContent.trim();
+      if (nm === norm){
+        targetBtn = btn;
+        break;
+      }
+    }
+    if (!targetBtn) return;
+
+    $all(".room").forEach(r => r.classList.remove("selected"));
+    targetBtn.classList.add("selected");
+
+    targetBtn.scrollIntoView({behavior:"smooth", block:"center", inline:"center"});
+  }
+
+  window.planHighlightRoom = highlightRoomExternal;
 
 })();
