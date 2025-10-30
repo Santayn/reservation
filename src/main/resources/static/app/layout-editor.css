@@ -1,0 +1,323 @@
+/* Общие стили страницы редактора */
+
+body {
+    margin: 0;
+    background: #f5f6f8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #222;
+}
+
+.le-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* ===== TOP BAR ===== */
+
+.le-topbar {
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.le-topbar-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.le-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111;
+}
+
+.le-top-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.le-top-links {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.le-link {
+    color: #0366d6;
+    text-decoration: none;
+}
+.le-link:hover {
+    text-decoration: underline;
+}
+
+/* ===== BUTTONS ===== */
+
+.le-btn {
+    background: #fff;
+    border: 1px solid #444;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.2;
+    padding: 6px 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.le-btn:hover {
+    background: #eee;
+}
+
+.le-btn.danger {
+    border-color: #c62828;
+    color: #c62828;
+}
+.le-btn.danger:hover {
+    background: #ffebee;
+}
+
+.le-btn.warn {
+    border-color: #ef6c00;
+    color: #ef6c00;
+}
+.le-btn.warn:hover {
+    background: #fff3e0;
+}
+
+/* ===== LAYOUT ===== */
+
+.le-main {
+    flex: 1 1 auto;
+    min-height: 0; /* чтобы flex контейнер не ломался */
+    display: flex;
+    gap: 0;
+    padding: 0;
+}
+
+/* Левая часть = холст + палитра внизу */
+.le-canvas-wrap {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-right: 1px solid #ccc;
+    background: #e9eaee;
+}
+
+/* Сам холст */
+.le-canvas {
+    position: relative;
+    flex: 1 1 auto;
+    background-image: linear-gradient(#dfe0e5 1px, transparent 1px),
+                      linear-gradient(90deg, #dfe0e5 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-color: #fafafa;
+    outline: none;
+    overflow: auto;
+    min-height: 300px;
+}
+
+/*
+ * Каждый элемент на холсте будет position:absolute;
+ * Тут общие базовые классы мы задаём через JS inline-style,
+ * но рамки выделения и ручки ресайза зададим тут.
+ */
+
+.le-elem {
+    position: absolute;
+    box-sizing: border-box;
+    cursor: move;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1.2;
+    color: #111;
+    text-align: center;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+/* круги будем делать через border-radius:50% в JS */
+
+/* выделение текущего элемента */
+.le-elem.selected {
+    outline: 2px solid #2962ff;
+    outline-offset: 0;
+}
+
+/* ресайз-хэндлы */
+.le-resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #2962ff;
+    border: 2px solid #fff;
+    border-radius: 2px;
+    box-sizing: border-box;
+    cursor: nwse-resize;
+    z-index: 5;
+}
+.le-resize-handle.br { /* bottom-right */
+    right: -6px;
+    bottom: -6px;
+    cursor: nwse-resize;
+}
+.le-resize-handle.bl {
+    left: -6px;
+    bottom: -6px;
+    cursor: nesw-resize;
+}
+.le-resize-handle.tr {
+    right: -6px;
+    top: -6px;
+    cursor: nesw-resize;
+}
+.le-resize-handle.tl {
+    left: -6px;
+    top: -6px;
+    cursor: nwse-resize;
+}
+
+/* круг мы тоже ресайзим четырьмя маркерами, чтобы менять диаметр */
+
+/* ===== PALETTE ===== */
+
+.le-palette {
+    flex: 0 0 auto;
+    background: #fff;
+    border-top: 1px solid #ccc;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.le-palette-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.le-palette-title {
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.le-tool-btn {
+    background: #fff;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 13px;
+    padding: 5px 8px;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+}
+.le-tool-btn:hover {
+    background: #eee;
+}
+
+/* ===== INSPECTOR ===== */
+
+.le-inspector {
+    flex: 0 0 320px;
+    background: #fafafa;
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.le-inspector-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    color: #111;
+}
+
+.le-empty-hint {
+    font-size: 13px;
+    color: #666;
+    background: #fff;
+    border: 1px dashed #bbb;
+    border-radius: 6px;
+    padding: 12px;
+}
+
+.le-form {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.le-row2 {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+.le-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+}
+
+.le-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #111;
+    margin-bottom: 4px;
+}
+
+.le-input {
+    font-size: 13px;
+    border: 1px solid #999;
+    border-radius: 4px;
+    line-height: 1.4;
+    padding: 5px 6px;
+    font-family: inherit;
+    color: #111;
+    min-width: 0;
+}
+
+.le-input:disabled {
+    background: #f3f3f3;
+    color: #666;
+}
+
+/* SAVE PREVIEW */
+.le-save-preview {
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 12px;
+}
+.le-json-dump {
+    width: 100%;
+    height: 200px;
+    border: 1px solid #999;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #111;
+    padding: 8px;
+    background: #fafafa;
+    box-sizing: border-box;
+    resize: vertical;
+}
