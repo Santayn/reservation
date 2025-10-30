@@ -34,7 +34,7 @@
             </select>
         </div>
 
-        <!-- Серия -->
+        <!-- Серия / день / TZ -->
         <div class="group" role="group" aria-label="Параметры серии">
             <strong>Серия:</strong>
             <label style="margin-left:6px;">
@@ -46,15 +46,52 @@
 
             <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
                 <option value="">— любая —</option>
+                <option value="ANY">без чётности</option>
+                <option value="ODD">нечётная неделя</option>
+                <option value="EVEN">чётная неделя</option>
             </select>
 
             <label style="margin-left:10px;"><strong>День:</strong></label>
             <select id="sch-day" style="min-width:180px" aria-label="День недели">
                 <option value="">— выберите день —</option>
+                <option value="MONDAY">Понедельник</option>
+                <option value="TUESDAY">Вторник</option>
+                <option value="WEDNESDAY">Среда</option>
+                <option value="THURSDAY">Четверг</option>
+                <option value="FRIDAY">Пятница</option>
+                <option value="SATURDAY">Суббота</option>
+                <option value="SUNDAY">Воскресенье</option>
             </select>
 
             <label style="margin-left:10px;"><strong>TZ:</strong></label>
-            <input id="sch-tz" type="text" style="min-width:220px" aria-label="Тайм-зона" placeholder="Europe/Vienna">
+            <select id="sch-tz" aria-label="Тайм-зона" style="min-width:240px">
+                <!-- 24 «чистых» зоны, дефолт — Москва -->
+                <option value="Pacific/Midway">(UTC-11) Pacific/Midway</option>
+                <option value="Pacific/Honolulu">(UTC-10) Pacific/Honolulu</option>
+                <option value="America/Anchorage">(UTC-09) America/Anchorage</option>
+                <option value="America/Los_Angeles">(UTC-08) America/Los_Angeles</option>
+                <option value="America/Denver">(UTC-07) America/Denver</option>
+                <option value="America/Chicago">(UTC-06) America/Chicago</option>
+                <option value="America/New_York">(UTC-05) America/New_York</option>
+                <option value="America/Halifax">(UTC-04) America/Halifax</option>
+                <option value="America/Argentina/Buenos_Aires">(UTC-03) America/Argentina/Buenos_Aires</option>
+                <option value="Atlantic/South_Georgia">(UTC-02) Atlantic/South_Georgia</option>
+                <option value="Atlantic/Azores">(UTC-01) Atlantic/Azores</option>
+                <option value="UTC">(UTC±00) UTC</option>
+                <option value="Europe/London">(UTC±00) Europe/London</option>
+                <option value="Europe/Berlin">(UTC+01) Europe/Berlin</option>
+                <option value="Europe/Athens">(UTC+02) Europe/Athens</option>
+                <option value="Europe/Moscow" selected>(UTC+03) Europe/Moscow</option>
+                <option value="Asia/Dubai">(UTC+04) Asia/Dubai</option>
+                <option value="Asia/Karachi">(UTC+05) Asia/Karachi</option>
+                <option value="Asia/Dhaka">(UTC+06) Asia/Dhaka</option>
+                <option value="Asia/Bangkok">(UTC+07) Asia/Bangkok</option>
+                <option value="Asia/Shanghai">(UTC+08) Asia/Shanghai</option>
+                <option value="Asia/Tokyo">(UTC+09) Asia/Tokyo</option>
+                <option value="Australia/Sydney">(UTC+10) Australia/Sydney</option>
+                <option value="Pacific/Noumea">(UTC+11) Pacific/Noumea</option>
+                <option value="Pacific/Auckland">(UTC+12) Pacific/Auckland</option>
+            </select>
         </div>
 
         <!-- Фильтр -->
@@ -91,14 +128,14 @@
         </div>
     </div>
 
-    <!-- Блок расписания преподавателя (под teacher-schedule.js) -->
+    <!-- Блок расписания преподавателя -->
     <section id="teacher-schedule-block" class="teacher-schedule" hidden aria-label="Моё расписание">
         <h3>Моё расписание на выбранный день</h3>
         <div id="teacher-schedule-list" class="ts-list"></div>
         <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
     </section>
 
-    <!-- План здания -->
+    <!-- План здания (как у вас было) -->
     <div class="building" aria-label="План этажей">
         <div class="wings">
             <!-- Левый корпус -->
@@ -259,7 +296,6 @@
 <script src="/app/components/room-drawer.js"></script>
 <script src="/app/components/schedule-panel.js"></script>
 <script src="/app/plan-page.js"></script>
-<!-- новый скрипт расписания преподавателя -->
 <script src="/app/teacher-schedule.js"></script>
 </body>
 </html>

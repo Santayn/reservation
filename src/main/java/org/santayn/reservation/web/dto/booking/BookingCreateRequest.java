@@ -46,4 +46,6 @@ public class BookingCreateRequest {
     private Long teacherId;
 
     private LocalDate date;
+
+    private String timeZoneId;
 }

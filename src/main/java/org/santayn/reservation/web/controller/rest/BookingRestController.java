@@ -4,7 +4,9 @@ package org.santayn.reservation.web.controller.rest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.*;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.santayn.reservation.models.booking.Booking;
@@ -21,13 +23,21 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * ВАЖНО: для разовой брони преподавателя клиент присылает поле date (LocalDate, yyyy-MM-dd).
- * Контроллер высчитывает expiresAt по окончанию слота в зоне Europe/Berlin.
+ * Разовая бронь:
+ * - Клиент присылает date (yyyy-MM-dd) и timeZoneId.
+ * - timeZoneId может быть:
+ *     * "UTC+03:00", "UTC-10", "UTC+00" (предпочтительно)
+ *     * либо "Europe/Moscow", "Moscow", "Europe/London", "London" и т.п.
+ * - Контроллер переводит это в фиксированный ZoneOffset (без DST) и
+ *   вычисляет expiresAt = (date + время конца слота) в этом смещении -> Instant.
+ * - В БД храним только Instant expiresAt. Саму строку TZ не сохраняем.
  */
 @RestController
 @RequestMapping(value = "/api/bookings", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
 public class BookingRestController {
+
+    private static final ZoneOffset DEFAULT_OFFSET = ZoneOffset.ofHours(3); // Москва = UTC+03:00
 
     private final BookingService service;
     private final AuthTeacherService authTeacherService;
@@ -37,29 +47,35 @@ public class BookingRestController {
     public ResponseEntity<BookingResponse> create(@Valid @RequestBody BookingCreateRequest r) {
         Booking draft = toEntity(r);
 
-        // По дате из UI строим момент окончания в конце выбранного слота
         Instant expiresAt = null;
         if (r.getDate() != null) {
             ScheduleSlot slot = scheduleSlotRepository.findById(r.getSlotId())
                     .orElseThrow(() -> new IllegalArgumentException("Слот не найден: " + r.getSlotId()));
 
-            // ScheduleSlot.getEndAt() -> LocalDateTime: берём только время конца
+            // Берём только время конца слота (локальная «школьная» логика)
             LocalTime endTime = slot.getEndAt().toLocalTime();
 
-            // дата (из UI) + время конца слота -> Instant в TZ
+            // Дата из UI + это время
             LocalDateTime endDateTime = LocalDateTime.of(r.getDate(), endTime);
-            ZoneId zone = ZoneId.of("Europe/Berlin"); // при необходимости поменяйте
-            expiresAt = endDateTime.atZone(zone).toInstant();
+
+            // Фиксированное смещение (без DST)
+            ZoneOffset offset = resolveFixedOffset(r.getTimeZoneId());
+
+            // Превращаем в Instant через OffsetDateTime
+            expiresAt = endDateTime.atOffset(offset).toInstant();
         }
 
         Booking created = service.createAsCurrentUser(draft, r.getDate(), expiresAt);
-        return ResponseEntity.created(URI.create("/api/bookings/" + created.getId()))
+        return ResponseEntity
+                .created(URI.create("/api/bookings/" + created.getId()))
                 .body(toResponse(created));
     }
 
     @GetMapping
     public ResponseEntity<List<BookingResponse>> getAll() {
-        List<BookingResponse> list = service.getAll().stream().map(this::toResponse).collect(Collectors.toList());
+        List<BookingResponse> list = service.getAll().stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
         return ResponseEntity.ok(list);
     }
 
@@ -71,7 +87,8 @@ public class BookingRestController {
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<BookingResponse> update(@PathVariable Long id, @Valid @RequestBody BookingCreateRequest r) {
+    public ResponseEntity<BookingResponse> update(@PathVariable Long id,
+                                                  @Valid @RequestBody BookingCreateRequest r) {
         Booking updated = service.updateAsCurrentUser(id, toEntity(r));
         return ResponseEntity.ok(toResponse(updated));
     }
@@ -82,6 +99,7 @@ public class BookingRestController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Поиск броней по дню/чётности/слоту (агрегированный/полный ответ). */
     @GetMapping("/search")
     public ResponseEntity<List<?>> search(
             @RequestParam DayOfWeek dayOfWeek,
@@ -128,7 +146,7 @@ public class BookingRestController {
                 .slotId(r.getSlotId())
                 .classroomId(r.getClassroomId())
                 .groupId(r.getGroupId())
-                .teacherId(r.getTeacherId()) // у препода подменяется на его ID
+                .teacherId(r.getTeacherId()) // у препода будет подменено на его ID
                 .build();
     }
 
@@ -151,6 +169,82 @@ public class BookingRestController {
             return new BookingSlimResponse(b.getId(), b.getClassroomId(), b.getGroupId(), b.getFloor());
         }
     }
+
+    // ======= Разбор timeZoneId в фиксированное смещение UTC =======
+
+    private static final Map<String, ZoneOffset> NAME_TO_OFFSET = buildNameMap();
+
+    private static Map<String, ZoneOffset> buildNameMap() {
+        Map<String, ZoneOffset> m = new HashMap<>();
+        // Москва
+        m.put("europe/moscow", ZoneOffset.ofHours(3));
+        m.put("moscow",        ZoneOffset.ofHours(3));
+        m.put("msk",           ZoneOffset.ofHours(3));
+        // Лондон (всегда 0, без DST)
+        m.put("europe/london", ZoneOffset.UTC);
+        m.put("london",        ZoneOffset.UTC);
+        m.put("gmt",           ZoneOffset.UTC);
+        m.put("uk",            ZoneOffset.UTC);
+        // Берлин (жёстко +01, без DST) — если надо
+        m.put("europe/berlin", ZoneOffset.ofHours(1));
+        m.put("berlin",        ZoneOffset.ofHours(1));
+        // Добавляйте при необходимости
+        return m;
+    }
+
+    private ZoneOffset resolveFixedOffset(String tz) {
+        if (tz == null || tz.isBlank()) {
+            return DEFAULT_OFFSET;
+        }
+        String v = tz.trim();
+
+        // 1) Нормальная форма: "UTC+03:00", "UTC-10", "UTC+00"
+        String upper = v.toUpperCase();
+        if (upper.startsWith("UTC")) {
+            String raw = upper.substring(3).trim();  // "+03:00" | "-10" | "+00"
+            if (!raw.isEmpty()) {
+                // Приведём к "+HH:MM"
+                String norm = normalizeOffset(raw);
+                try {
+                    return ZoneOffset.of(norm);
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // 2) Сопоставление по «имени» (жестко забитое смещение, без DST)
+        ZoneOffset byName = NAME_TO_OFFSET.get(v.toLowerCase());
+        if (byName != null) return byName;
+
+        // 3) Последняя попытка: вдруг пришло просто "+03:00" / "-10"
+        try {
+            return ZoneOffset.of(normalizeOffset(v));
+        } catch (Exception ignored) {}
+
+        // 4) Дефолт — Москва +03:00
+        return DEFAULT_OFFSET;
+    }
+
+    /** Приводит строку смещения к формату, который понимает ZoneOffset: "+HH:MM". */
+    private String normalizeOffset(String raw) {
+        String s = raw.replace(" ", "");
+        // варианты: "+3", "+03", "+0300", "+03:00", "-10", "-10:30"
+        if (!s.contains(":")) {
+            // "+3" -> "+03:00"; "+0300" -> "+03:00"; "-10" -> "-10:00"
+            boolean neg = s.startsWith("-");
+            boolean pos = s.startsWith("+");
+            String digits = s.replace("+", "").replace("-", "");
+            if (digits.length() == 1) digits = "0" + digits;
+            if (digits.length() == 2) digits = digits + "00";
+            if (digits.length() == 3) digits = "0" + digits; // теоретически
+            String hh = digits.substring(0, 2);
+            String mm = digits.substring(2, 4);
+            return (neg ? "-" : "+") + hh + ":" + mm;
+        }
+        // уже "+HH:MM"
+        return s;
+    }
+
+    // ======= Handlers =======
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> bad(IllegalArgumentException ex) {

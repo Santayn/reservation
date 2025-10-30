@@ -1,7 +1,5 @@
 // room-drawer.js
-// Используем slotId из селекта. Чипы групп кликабельны (удаляют свою бронь).
-// Показываем преподавателей как: login — Full Name (id=...).
-// При сохранении передаём date (yyyy-MM-dd) из #date-input.
+// + timeZoneId: берём из #sch-tz (или Europe/Moscow по умолчанию)
 
 (function () {
   "use strict";
@@ -16,14 +14,11 @@
     selectedTeacherId: null,
   };
 
-  // Индекс аудиторий
   const classroomIndex = { byName: new Map(), byId: new Map(), loaded: false };
-
-  // Кэши
   const groupsCache   = { list: [], byId: new Map() };
   const teachersCache = { list: [], byId: new Map(), loaded: false };
 
-  // ---------------- helpers ----------------
+  // ---------- helpers ----------
   async function apiGet(url) {
     const r = await fetch(url, { credentials: "include" });
     if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
@@ -48,6 +43,11 @@
   }
   function getSelectedDateStr() {
     return document.querySelector("#date-input")?.value?.trim() || null; // yyyy-MM-dd
+  }
+  // NEW: тайм-зона из поля, дефолт Europe/Moscow
+  function getSelectedTzId() {
+    const raw = document.querySelector("#sch-tz")?.value?.trim();
+    return raw || "Europe/Moscow";
   }
 
   async function ensureClassroomsIndex() {
@@ -75,7 +75,7 @@
     throw new Error(`Не удалось определить PK аудитории для "${name || idAsName || "?"}"`);
   }
 
-  // ---------------- drawer ----------------
+  // ---------- drawer ----------
   function openDrawer(roomCtx) {
     state.open = true;
     state.current = roomCtx;
@@ -86,7 +86,6 @@
     el("d-slot").textContent = roomCtx.slot?.label || "—";
     el("d-by").textContent   = "—";
 
-    // очистка UI
     el("groups-box").innerHTML   = "";
     ensureTeacherSelectUI();
     resetTeacherSelect();
@@ -102,7 +101,6 @@
       };
     }
 
-    // загрузки
     Promise.all([
       fetchCurrentBookings(roomCtx).catch(() => []),
       fetchGroups().catch(() => []),
@@ -135,7 +133,7 @@
     $("#drawer").setAttribute("aria-hidden", "true");
   }
 
-  // ------------- data loads -------------
+  // ---------- data loads ----------
   async function fetchGroups() {
     try {
       const data = await apiGet("/api/groups?size=1000");
@@ -183,7 +181,7 @@
     return r.json();
   }
 
-  // ------------- save / delete -------------
+  // ---------- save / delete ----------
   async function saveBooking(selectedGroupId) {
     if (!state.current) return;
     if (!Number.isFinite(state.selectedTeacherId)) {
@@ -200,7 +198,8 @@
       classroomId:    ctx.classroomId,
       groupId:        selectedGroupId,
       teacherId:      state.selectedTeacherId,
-      date:           getSelectedDateStr(), // yyyy-MM-dd или null
+      date:           getSelectedDateStr(),   // yyyy-MM-dd
+      timeZoneId:     getSelectedTzId(),      // NEW: IANA TZ (default Europe/Moscow)
     };
 
     const r = await fetch("/api/bookings", {
@@ -232,7 +231,7 @@
     if (!r.ok) throw new Error((await r.text()) || `Ошибка удаления (${r.status})`);
   }
 
-  // --------------- render ----------------
+  // ---------- render ----------
   function renderCurrentBookings(bookings, groupsById) {
     const box = el("d-by");
     const chipsWrap = el("current-chips");
@@ -361,7 +360,7 @@
     state.selectedTeacherId = null;
   }
 
-  // ------------- room meta -------------
+  // ---------- room meta ----------
   async function hydrateRoomMeta(classroomPk) {
     const [buildings, faculties, specs] = await Promise.all([
       loadBuildings().catch(() => []),
@@ -397,7 +396,7 @@
     return arr.map((s) => ({ id: s.id, name: s.name || s.title || `Специализация ${s.id}` }));
   }
 
-  // ------------- usage -------------
+  // ---------- usage ----------
   function updateUsage(bookings, capacity, groupsById) {
     const totalPersons = (Array.isArray(bookings) ? bookings : []).reduce((acc, b) => {
       const pc = groupsById.get?.(Number(b.groupId))?.personsCount;
@@ -431,7 +430,7 @@
     }
   }
 
-  // ------------- buttons -------------
+  // ---------- buttons ----------
   (function bindButtons() {
     el("d-close")?.addEventListener("click", closeDrawer);
     el("overlay")?.addEventListener("click", closeDrawer);
@@ -503,6 +502,5 @@
     });
   })();
 
-  // export
   window.RoomDrawer = { open: openDrawer, close: closeDrawer };
 })();
