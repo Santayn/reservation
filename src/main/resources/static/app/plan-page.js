@@ -1,17 +1,10 @@
 // plan-page.js
-// Подсветка заполненности аудиторий + фильтр по факультету/спецу.
-// Тайм-зоны: фиксированные UTC±HH:MM без DST (в value уже "UTC+03:00").
-// Схемы:
-//
-//   - В выпадающем списке "Схема:" ПЕРВОЙ идёт "Дефолтная схема" (это просто верстка из HTML, без layoutJson).
-//   - Далее идут реальные схемы, полученные с бэка или из localStorage редактора.
-//   - Корпус визуально НЕ показываем, но под капотом мы всё ещё можем брать схемы с бэка,
-//     как раньше: /api/buildings -> /api/layouts/by-building/{id}.
-//
-// Важно:
-//   - Если у тебя бекенд не даёт /api/layouts напрямую, мы автоматически упадём на
-//     /api/buildings и возьмём схемы первого корпуса через /api/layouts/by-building/{buildingId}.
-//   - Если и там пусто, попробуем localStorage.
+// Подсветка заполняемости аудиторий + фильтры по факультету/спецу.
+// Тайм-зоны как фиксированные UTC±hh:mm без DST.
+// Схемы здания: без корпусов. Есть только layout-select с пунктом "Дефолтная схема"
+//   + остальные схемы из бэка (/api/layouts).
+// Если выбрана "Дефолтная схема", верстка (#building-plan) остаётся как в HTML.
+// Если выбрана любая другая схема, мы подменяем #building-plan на основе layoutJson.
 
 (function () {
   "use strict";
@@ -27,7 +20,9 @@
     }
   }
 
-  // ===== Глобальные кэши (общие с другими модулями) =====
+  // =========================
+  // Глобальные кэши (для других модулей)
+  // =========================
   const GroupsCache = window.GroupsCache || { byId:new Map(), loaded:false };
   const RoomsMeta   = window.RoomsMeta   || { byId:new Map(), byName:new Map(), loaded:false };
 
@@ -60,7 +55,7 @@
           id,
           name: nm,
           floor: Number(c.floor ?? 0),
-          corpus: c.corpus || c.building || "",
+          corpus: c.corpus || c.building || "", // это поле уже не используется визуально, но оставим для фильтра
           facultyIds: Array.isArray(c.facultyIds) ? c.facultyIds.map(Number) : [],
           specializationIds: Array.isArray(c.specializationIds) ? c.specializationIds.map(Number) : []
         };
@@ -73,495 +68,25 @@
     }
   }
 
-  // ===== Кэш слотов =====
-  const slotsMap = new Map(); // id -> {id,label}
-
-  // ===== STATE для схем =====
-  // UI корпуса нет, но нам всё ещё нужно знать "какой корпус мы выбрали первым".
-  // internalBuildingId — просто скрытый выбранный корпус с бэка.
-  const LayoutState = {
-    internalBuildingId: null, // number | null
-    buildings: [],            // [{id,name}, ...] (для внутреннего использования)
-    layouts: [],              // [{id,name,floorNumber,layoutJson?}, ...] БЕЗ дефолтной
-    currentLayoutId: null,    // "static-default" (дефолтная) ИЛИ конкретный ID схемы
-    currentLayoutData: null   // полная схема {id,name,floorNumber,layoutJson} если выбрана не дефолтная
-  };
-
   // =========================
-  // Основной ready() сценарий
+  // Слоты расписания (пары / окна)
   // =========================
-  ready(async () => {
-    // 0. Схемы
-    await initLayoutsFlow();
+  const slotsMap = new Map(); // slotId -> {id,label}
 
-    // 1. Панель расписания (если есть)
-    window.SchedulePanel?.init?.();
-
-    // 2. Переключалка этажей
-    initFloorSwitch();
-
-    // 3. Слоты
-    await initSlots();
-
-    // 4. Дата сегодня
-    initDateField();
-
-    // 5. Тайм-зоны
-    initTimeZones();
-
-    // 6. Навесить клики по аудиториям
-    initRooms();
-
-    // 7. Подтянуть справочники групп и аудиторий
-    await Promise.all([loadGroups(), loadRoomsMeta()]);
-
-    // 8. Фильтр по факультету/спецу
-    initFilterMenu();
-
-    // 9. Подсветка занятости
-    attachRefreshHandlers();
-    refreshOccupancy();
-  });
-
-  // =========================
-  // СХЕМЫ (главное)
-  // =========================
-
-  async function initLayoutsFlow() {
-    // 1. Загрузим схемы (и корпуса, если надо)
-    await loadAllLayoutsSmart();
-
-    // 2. Если ничего не выбрано — выберем дефолтную схему
-    if (!LayoutState.currentLayoutId) {
-      LayoutState.currentLayoutId = "static-default";
-    }
-
-    // 3. Отрисуем селект схем (включая "Дефолтная схема" первым пунктом)
-    updateLayoutSelect();
-
-    // 4. Синхронизируем данные по выбранной схеме (если она не дефолт)
-    await syncCurrentLayoutData();
-
-    // 5. Заголовок / кнопка "Конструктор плана"
-    applyHeaderInfo();
-
-    // 6. Если выбрана не дефолтная схема — перерисуем план
-    renderBuildingPlanFromLayout();
-
-    // 7. Навесим обработчик смены схемы
-    bindLayoutChangeHandler();
-  }
-
-  // универсальная загрузка схем:
-  //  - пробуем /api/layouts
-  //  - если пусто -> тянем /api/buildings, берём первый, тянем /api/layouts/by-building/{id}
-  //  - если всё равно пусто -> берём localStorage
-  async function loadAllLayoutsSmart() {
-    // попробуем прямой список схем
-    let layoutsFromApi = [];
-    layoutsFromApi = await tryFetchLayoutsDirect();
-    if (layoutsFromApi.length === 0) {
-      // нет прямого списка — пробуем через корпуса
-      const { buildingId, layouts } = await tryFetchLayoutsViaBuildings();
-      LayoutState.internalBuildingId = buildingId;
-      layoutsFromApi = layouts;
-    }
-
-    // если всё ещё пусто — попробуем localStorage редактора
-    if (layoutsFromApi.length === 0) {
-      layoutsFromApi = readLocalEditorSaves();
-    }
-
-    // сохраним корпуса / layouts в стейт
-    LayoutState.layouts = layoutsFromApi.map(it => normalizeLayout(it));
-  }
-
-  // пробуем /api/layouts или /api/layouts?size=1000
-  async function tryFetchLayoutsDirect() {
-    const candidates = ["/api/layouts", "/api/layouts?size=1000"];
-    for (const url of candidates) {
-      try {
-        const r = await fetch(url, { credentials:"include" });
-        if (!r.ok) continue;
-        const data = await r.json();
-        const arr = Array.isArray(data) ? data : (Array.isArray(data.content) ? data.content : []);
-        if (arr && arr.length) {
-          return arr;
-        }
-      } catch (e) {
-        // просто молчим и пробуем следующий
-      }
-    }
-    return [];
-  }
-
-  // пробуем /api/buildings -> layouts/by-building/{id}
-  async function tryFetchLayoutsViaBuildings() {
-    let buildings = [];
-    try {
-      const rb = await fetch("/api/buildings", { credentials:"include" });
-      if (rb.ok) {
-        const dataB = await rb.json();
-        buildings = Array.isArray(dataB) ? dataB : (Array.isArray(dataB.content) ? dataB.content : []);
-      }
-    } catch (e) {
-      // ignore
-    }
-    LayoutState.buildings = buildings;
-
-    if (!buildings.length) {
-      return { buildingId:null, layouts:[] };
-    }
-
-    // берём первый корпус как "активный" невидимый
-    const firstB = buildings[0];
-    const bId = firstB?.id ?? firstB?.buildingId ?? firstB?.building_id ?? null;
-    if (bId == null) {
-      return { buildingId:null, layouts:[] };
-    }
-
-    let layouts = [];
-    try {
-      const rl = await fetch(`/api/layouts/by-building/${bId}`, { credentials:"include" });
-      if (rl.ok) {
-        const dataL = await rl.json();
-        layouts = Array.isArray(dataL) ? dataL : (Array.isArray(dataL.content) ? dataL.content : []);
-      }
-    } catch (e2) {
-      // ignore
-    }
-
-    return {
-      buildingId: bId,
-      layouts
-    };
-  }
-
-  // локальные черновики из редактора
-  function readLocalEditorSaves() {
-    const out = [];
-
-    // формат: le:saves = массив
-    try {
-      const raw = localStorage.getItem("le:saves");
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          for (const it of arr) {
-            if (!it) continue;
-            out.push({
-              id: it.id ?? it.layoutId ?? it.key ?? Date.now(),
-              name: it.name || `Локальная схема`,
-              floorNumber: it.floorNumber ?? it.floor ?? 1,
-              layoutJson: it.layoutJson || JSON.stringify({ elements: it.elements || [] })
-            });
-          }
-        }
-      }
-    } catch(e){
-      // ignore
-    }
-
-    // формат: le:save:<id> = по одной схеме
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k || !k.startsWith("le:save:")) continue;
-        const raw = localStorage.getItem(k);
-        if (!raw) continue;
-        try {
-          const it = JSON.parse(raw);
-          out.push({
-            id: it.id ?? it.layoutId ?? k.slice("le:save:".length),
-            name: it.name || `Локальная схема`,
-            floorNumber: it.floorNumber ?? it.floor ?? 1,
-            layoutJson: it.layoutJson || JSON.stringify({ elements: it.elements || [] })
-          });
-        } catch(e2){
-          // ignore
-        }
-      }
-    } catch(e3){
-      // нет доступа к localStorage.length? тогда просто пропустим
-    }
-
-    // уберём дубли
-    const uniq = new Map();
-    for (const it of out) {
-      uniq.set(String(it.id), it);
-    }
-    return Array.from(uniq.values());
-  }
-
-  // нормализуем объект схемы в единый формат
-  function normalizeLayout(raw) {
-    const idVal = raw.id ?? raw.layoutId ?? raw.key ?? Date.now();
-    const floorNum = raw.floorNumber ?? raw.floor ?? null;
-    return {
-      id: String(idVal),
-      name: raw.name || raw.title || `Схема ${idVal}`,
-      floorNumber: floorNum,
-      layoutJson: raw.layoutJson
-        || raw.layoutJSON
-        || JSON.stringify({ elements: raw.elements || [] })
-    };
-  }
-
-  // загружаем полные данные по текущей схеме (если она не дефолтная)
-  async function syncCurrentLayoutData() {
-    if (LayoutState.currentLayoutId === "static-default") {
-      LayoutState.currentLayoutData = null;
-      return;
-    }
-
-    // сначала попробуем взять данные прямо из LayoutState.layouts
-    const local = LayoutState.layouts.find(
-      l => String(l.id) === String(LayoutState.currentLayoutId)
-    );
-    if (local) {
-      LayoutState.currentLayoutData = { ...local };
-    }
-
-    // потом попробуем обновить с бэка /api/layouts/{id}
-    try {
-      const r = await fetch(`/api/layouts/${LayoutState.currentLayoutId}`, { credentials:"include" });
-      if (r.ok) {
-        const full = await r.json();
-        LayoutState.currentLayoutData = {
-          id: String(full.id ?? LayoutState.currentLayoutId),
-          name: full.name || full.title || (local ? local.name : `Схема ${LayoutState.currentLayoutId}`),
-          floorNumber: full.floorNumber ?? full.floor ?? (local ? local.floorNumber : null),
-          layoutJson: full.layoutJson
-            || full.layoutJSON
-            || (local ? local.layoutJson : null)
-        };
-      }
-    } catch (e){
-      // если запрос не удался — остаёмся на local
-    }
-  }
-
-  // =========================
-  // UI: селект схем
-  // =========================
-
-  function updateLayoutSelect() {
-    const sel = $("#layout-select");
-    if (!sel) return;
-
-    sel.innerHTML = "";
-
-    // 1. "Дефолтная схема" всегда первая
-    const defOpt = document.createElement("option");
-    defOpt.value = "static-default";
-    defOpt.textContent = "Дефолтная схема";
-    if (LayoutState.currentLayoutId === "static-default") {
-      defOpt.selected = true;
-    }
-    sel.appendChild(defOpt);
-
-    // 2. Остальные схемы (если есть)
-    if (LayoutState.layouts.length > 0) {
-      LayoutState.layouts.forEach(l => {
-        const opt = document.createElement("option");
-        opt.value = String(l.id);
-
-        const floorLabel =
-          (l.floorNumber !== undefined && l.floorNumber !== null && l.floorNumber !== "")
-            ? ("этаж " + l.floorNumber + " · ")
-            : "";
-
-        opt.textContent = l.name
-          ? (floorLabel + l.name)
-          : ("схема " + l.id);
-
-        if (String(l.id) === String(LayoutState.currentLayoutId)) {
-          opt.selected = true;
-        }
-        sel.appendChild(opt);
-      });
-    }
-
-    sel.disabled = false;
-  }
-
-  // =========================
-  // UI: заголовок и кнопка "Конструктор плана"
-  // =========================
-
-  function applyHeaderInfo() {
-    const lNameSpan = $("#current-layout-name");
-    const editBtn   = $("#to-editor-btn");
-
-    const lObj = LayoutState.layouts.find(
-      l => String(l.id) === String(LayoutState.currentLayoutId)
-    );
-
-    if (lNameSpan) {
-      if (LayoutState.currentLayoutId === "static-default") {
-        lNameSpan.textContent = "Дефолтная схема";
-      } else if (lObj) {
-        const floorLabel =
-          (lObj.floorNumber !== undefined && lObj.floorNumber !== null && lObj.floorNumber !== "")
-            ? ("этаж " + lObj.floorNumber + " · ")
-            : "";
-        lNameSpan.textContent = lObj.name
-          ? (floorLabel + lObj.name)
-          : ("схема " + lObj.id);
-      } else {
-        lNameSpan.textContent = "—";
-      }
-    }
-
-    if (editBtn) {
-      if (LayoutState.currentLayoutId === "static-default") {
-        // дефолт -> просто открыть редактор пустым
-        editBtn.href = "/app/layout-editor.html";
-      } else if (lObj) {
-        const floorParam = lObj.floorNumber != null ? lObj.floorNumber : "";
-        const layoutNameParam = lObj.name ? encodeURIComponent(lObj.name) : "";
-        editBtn.href =
-          "/app/layout-editor.html"
-          + "?floor=" + floorParam
-          + "&name=" + layoutNameParam
-          + "&layoutId=" + encodeURIComponent(LayoutState.currentLayoutId);
-      } else {
-        editBtn.href = "/app/layout-editor.html";
-      }
-    }
-  }
-
-  // =========================
-  // Рендер плана текущей схемы в #building-plan
-  // =========================
-  // Если выбрана "Дефолтная схема" -> не меняем твою статичную верстку.
-  // Иначе заменяем DOM на список аудиторий из layoutJson (type: "room").
-  function renderBuildingPlanFromLayout() {
-    const container = $("#building-plan");
-    if (!container) return;
-
-    if (LayoutState.currentLayoutId === "static-default") {
-      // оставить исходный HTML
-      return;
-    }
-
-    if (!LayoutState.currentLayoutData || !LayoutState.currentLayoutData.layoutJson) {
-      return;
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(LayoutState.currentLayoutData.layoutJson);
-    } catch (e) {
-      console.error("layoutJson не парсится:", e, LayoutState.currentLayoutData.layoutJson);
-      return;
-    }
-
-    const elements = Array.isArray(parsed.elements) ? parsed.elements : [];
-    const roomsOnly = elements.filter(el => el.type === "room");
-
-    const floorNum = LayoutState.currentLayoutData.floorNumber ?? "—";
-
-    const htmlParts = [];
-    htmlParts.push(
-      '<div class="wings">'
-        + '<section class="wing" aria-label="Этаж ' + escapeHtml(floorNum) + '">'
-          + '<h3>Этаж ' + escapeHtml(floorNum) + '</h3>'
-          + '<div class="floor active" data-floor="' + escapeHtml(floorNum) + '">'
-            + '<div class="rooms">'
-    );
-
-    roomsOnly.forEach(r => {
-      const rn = r.roomName || "Ауд. ?";
-      const cap = Number(r.capacity || 0);
-      htmlParts.push(
-        '<button type="button" class="room"'
-        + ' data-room="' + escapeHtml(rn) + '"'
-        + ' data-capacity="' + cap + '">'
-        + escapeHtml(rn) + ' (' + cap + ')'
-        + '</button>'
-      );
-    });
-
-    htmlParts.push(
-            '</div>'   // .rooms
-          + '</div>'   // .floor
-        + '</section>'
-      + '</div>'       // .wings
-    );
-
-    container.innerHTML = htmlParts.join("");
-
-    // После замены DOM навесим интерактив заново
-    initFloorSwitch();
-    initRooms();
-    attachRefreshHandlers();
-    refreshOccupancy();
-  }
-
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  // =========================
-  // Обработчик смены схемы
-  // =========================
-  function bindLayoutChangeHandler() {
-    const layoutSel = $("#layout-select");
-    if (!layoutSel) return;
-
-    layoutSel.addEventListener("change", async (ev) => {
-      const newLayoutId = ev.target.value;
-      LayoutState.currentLayoutId = newLayoutId || "static-default";
-
-      await syncCurrentLayoutData();
-      applyHeaderInfo();
-      renderBuildingPlanFromLayout();
-    });
-  }
-
-  // =========================
-  // Этажи
-  // =========================
-  function initFloorSwitch() {
-    const buttons = $all(".floor-switch button");
-    const floors  = $all(".floor");
-
-    const setFloor = (num) => {
-      buttons.forEach(b => {
-        const active = b.dataset.floor === String(num);
-        b.classList.toggle("active", active);
-        b.setAttribute("aria-pressed", String(active));
-      });
-      floors.forEach(f => {
-        f.classList.toggle("active", f.dataset.floor === String(num));
-      });
-    };
-
-    buttons.forEach(b => b.addEventListener("click", () => setFloor(b.dataset.floor)));
-  }
-
-  // =========================
-  // Слоты
-  // =========================
   async function initSlots(){
     const select = $("#slot-filter");
     const slots  = await loadSlotsFromApi();
     if (slots.length){
-      fillSelect(select, slots.map(s => ({value:String(s.id), label:s.label})));
-      slots.forEach(s => slotsMap.set(Number(s.id), s));
-      select.disabled = false;
+        fillSelect(select, slots.map(s => ({value:String(s.id), label:s.label})));
+        slots.forEach(s => slotsMap.set(Number(s.id), s));
+        select.disabled = false;
     } else {
-      select.innerHTML = "";
-      const opt = document.createElement("option");
-      opt.value="";
-      opt.textContent="— нет слотов —";
-      select.appendChild(opt);
-      select.disabled = true;
+        select.innerHTML = "";
+        const opt = document.createElement("option");
+        opt.value="";
+        opt.textContent="— нет слотов —";
+        select.appendChild(opt);
+        select.disabled = true;
     }
     select?.addEventListener("change", refreshOccupancy);
   }
@@ -602,7 +127,8 @@
   }
 
   // =========================
-  // Тайм-зоны (фиксированные UTC оффсеты)
+  // Тайм-зоны (фиксированные UTC ±hh:mm, без DST)
+  // Значения option.value -> BookingCreateRequest.timeZoneId.
   // =========================
   function initTimeZones(){
     const sel = document.getElementById("sch-tz");
@@ -643,11 +169,306 @@
       sel.appendChild(opt);
     }
 
-    sel.value = "UTC+03:00";
+    sel.value = "UTC+03:00"; // дефолт — Москва
   }
 
   // =========================
-  // Фильтр по факультету / специализации
+  // STATE для схем
+  // =========================
+  const LayoutState = {
+    layouts: [],            // [{id,name,floorNumber,layoutJson?}, ...] (без корпуса)
+    currentLayoutId: "default", // строка: "default" или число/id в строковом виде
+    currentLayoutData: null // полная схема (если не дефолт)
+  };
+
+  // =========================
+  // Инициализация схем
+  // =========================
+  async function initLayoutsFlow() {
+    // 1. забираем все схемы
+    await loadAllLayouts(); // -> заполняет LayoutState.layouts
+
+    // 2. если есть схемы и мы ещё не выбрали конкретную,
+    //    то currentLayoutId остаётся "default"
+    //    (то есть мы начинаем с дефолтной статики из HTML).
+    //    ничего менять не надо.
+
+    // 3. отрисовать селект схем (добавит "Дефолтная схема" первой)
+    updateLayoutSelect();
+
+    // 4. загрузить полную выбранную схему,
+    //    НО только если это не дефолт.
+    await loadCurrentLayoutFull();
+
+    // 5. проставить заголовок и ссылку в конструктор
+    applyHeaderInfo();
+
+    // 6. отрисовать план, если выбрана не дефолтная
+    renderBuildingPlanFromLayout();
+
+    // 7. подписаться на изменения селекта
+    bindLayoutChangeHandler();
+  }
+
+  // GET /api/layouts -> вернёт список всех BuildingLayoutResponse
+  async function loadAllLayouts() {
+    try {
+      const r = await fetch("/api/layouts", { credentials:"include" });
+      if (!r.ok) {
+        LayoutState.layouts = [];
+        return;
+      }
+      const data = await r.json();
+      LayoutState.layouts = Array.isArray(data)
+        ? data
+        : (Array.isArray(data.content) ? data.content : []);
+    } catch(e) {
+      console.error("Ошибка загрузки списка схем", e);
+      LayoutState.layouts = [];
+    }
+  }
+
+  // GET /api/layouts/{layoutId} -> BuildingLayoutResponse
+  async function loadCurrentLayoutFull() {
+    // если сейчас "default", мы ничего не грузим.
+    if (LayoutState.currentLayoutId === "default") {
+      LayoutState.currentLayoutData = null;
+      return;
+    }
+
+    const idNum = Number(LayoutState.currentLayoutId);
+    if (!Number.isFinite(idNum)) {
+      LayoutState.currentLayoutData = null;
+      return;
+    }
+
+    try {
+      const r = await fetch(`/api/layouts/${idNum}`, { credentials:"include" });
+      if (!r.ok) {
+        LayoutState.currentLayoutData = null;
+        return;
+      }
+      LayoutState.currentLayoutData = await r.json();
+    } catch(e) {
+      console.error("Ошибка загрузки выбранной схемы", e);
+      LayoutState.currentLayoutData = null;
+    }
+  }
+
+  // =========================
+  // UI: селект схемы
+  // =========================
+  function updateLayoutSelect() {
+    const sel = $("#layout-select");
+    if (!sel) return;
+
+    sel.innerHTML = "";
+
+    // всегда первая опция — дефолт
+    {
+      const optDefault = document.createElement("option");
+      optDefault.value = "default";
+      optDefault.textContent = "Дефолтная схема";
+      if (LayoutState.currentLayoutId === "default") {
+        optDefault.selected = true;
+      }
+      sel.appendChild(optDefault);
+    }
+
+    // затем — реальные схемы из бэка
+    LayoutState.layouts.forEach(l => {
+      const opt = document.createElement("option");
+      opt.value = String(l.id);
+
+      // подпись опции: "[этаж N · ]<имя>" или "схема <id>"
+      const floorLabel =
+        (l.floorNumber !== undefined && l.floorNumber !== null)
+          ? ("этаж " + l.floorNumber + " · ")
+          : "";
+
+      opt.textContent = l.name
+        ? (floorLabel + l.name)
+        : ("схема " + l.id);
+
+      if (String(l.id) === String(LayoutState.currentLayoutId)) {
+        opt.selected = true;
+      }
+
+      sel.appendChild(opt);
+    });
+
+    sel.disabled = false;
+  }
+
+  function bindLayoutChangeHandler() {
+    const layoutSel = $("#layout-select");
+    if (!layoutSel) return;
+
+    layoutSel.addEventListener("change", async (ev) => {
+      const newLayoutId = ev.target.value;
+
+      // обновляем state
+      LayoutState.currentLayoutId = newLayoutId || "default";
+
+      // заново тянем данные по схеме (если не дефолт)
+      await loadCurrentLayoutFull();
+
+      // обновляем заголовок
+      applyHeaderInfo();
+
+      // перерисовываем план здания
+      renderBuildingPlanFromLayout();
+
+      // после перерисовки плана надо повесить хэндлеры
+      initFloorSwitch();
+      initRooms();
+      attachRefreshHandlers();
+      refreshOccupancy();
+    });
+  }
+
+  // =========================
+  // UI: заголовок и кнопка "Конструктор плана"
+  // =========================
+  function applyHeaderInfo() {
+    const lNameSpan = $("#current-layout-name");
+    const editBtn   = $("#to-editor-btn");
+
+    if (LayoutState.currentLayoutId === "default") {
+      // дефолтный вариант
+      if (lNameSpan) {
+        lNameSpan.textContent = "Дефолтная схема";
+      }
+      if (editBtn) {
+        // без layoutId — просто редактор
+        editBtn.href = "/app/layout-editor.html";
+      }
+      return;
+    }
+
+    // ищем объект схемы по id
+    const lObj = LayoutState.layouts.find(
+      l => String(l.id) === String(LayoutState.currentLayoutId)
+    );
+
+    if (lNameSpan) {
+      if (lObj) {
+        const floorLabel =
+          (lObj.floorNumber !== undefined && lObj.floorNumber !== null)
+            ? "этаж " + lObj.floorNumber + " · "
+            : "";
+        lNameSpan.textContent = lObj.name
+          ? (floorLabel + lObj.name)
+          : ("схема " + lObj.id);
+      } else {
+        lNameSpan.textContent = "—";
+      }
+    }
+
+    if (editBtn) {
+      const floorParam =
+        lObj && lObj.floorNumber != null ? lObj.floorNumber : "";
+      const layoutNameParam =
+        lObj && lObj.name ? encodeURIComponent(lObj.name) : "";
+      editBtn.href =
+        "/app/layout-editor.html"
+        + "?layoutId=" + encodeURIComponent(LayoutState.currentLayoutId)
+        + "&floor=" + encodeURIComponent(floorParam)
+        + "&name=" + layoutNameParam;
+    }
+  }
+
+  // =========================
+  // Рендер плана из выбранной схемы
+  // =========================
+  function renderBuildingPlanFromLayout() {
+    const container = $("#building-plan");
+    if (!container) return;
+
+    // если выбрана дефолтная схема -> не трогаем HTML вообще
+    if (LayoutState.currentLayoutId === "default") {
+      return;
+    }
+
+    // если схему не удалось загрузить или нет layoutJson -> тоже не трогаем
+    if (!LayoutState.currentLayoutData || !LayoutState.currentLayoutData.layoutJson) {
+      return;
+    }
+
+    // парсим layoutJson
+    let parsed;
+    try {
+      parsed = JSON.parse(LayoutState.currentLayoutData.layoutJson);
+    } catch (e) {
+      console.error("layoutJson не парсится:", e, LayoutState.currentLayoutData.layoutJson);
+      return;
+    }
+
+    const elements = Array.isArray(parsed.elements) ? parsed.elements : [];
+    const roomsOnly = elements.filter(el => el.type === "room");
+
+    // В простом варианте считаем, что это один этаж = floorNumber
+    const floorNum = LayoutState.currentLayoutData.floorNumber ?? "—";
+
+    // Строим минималистичный блок: один "этаж" и список аудиторий-кнопок
+    const htmlParts = [];
+    htmlParts.push(
+      '<div class="wings">'
+        + '<section class="wing" aria-label="Этаж ' + escapeHtml(floorNum) + '">'
+          + '<h3>Этаж ' + escapeHtml(floorNum) + '</h3>'
+          + '<div class="floor active" data-floor="' + escapeHtml(floorNum) + '">'
+            + '<div class="rooms">'
+    );
+
+    roomsOnly.forEach(r => {
+      const rn = r.roomName || "Ауд. ?";
+      const cap = Number(r.capacity || 0);
+      htmlParts.push(
+        '<button type="button" class="room"'
+          + ' data-room="' + escapeHtml(rn) + '"'
+          + ' data-capacity="' + cap + '">'
+          + escapeHtml(rn) + ' (' + cap + ')'
+        + '</button>'
+      );
+    });
+
+    htmlParts.push(
+            '</div>'   // .rooms
+          + '</div>'   // .floor
+        + '</section>'
+      + '</div>'       // .wings
+    );
+
+    container.innerHTML = htmlParts.join("");
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // =========================
+  // Переключалка этажей (кнопки 1 / 2 / 3)
+  // =========================
+  function initFloorSwitch() {
+    const buttons = $all(".floor-switch button");
+    const floors  = $all(".floor");
+    const setFloor = (num) => {
+      buttons.forEach(b => {
+        const active = b.dataset.floor === String(num);
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-pressed", String(active));
+      });
+      floors.forEach(f => f.classList.toggle("active", f.dataset.floor === String(num)));
+    };
+    buttons.forEach(b => b.addEventListener("click", () => setFloor(b.dataset.floor)));
+  }
+
+  // =========================
+  // Фильтр по факультету / специальности
   // =========================
   function initFilterMenu(){
     const btn   = $("#filter-btn");
@@ -736,7 +557,7 @@
   }
 
   // =========================
-  // Комнаты / клики
+  // Клики по аудиториям -> выездная панель бронирования
   // =========================
   function initRooms(){
     const rooms = $all(".room");
@@ -764,12 +585,14 @@
           label: slotSel?.selectedOptions?.[0]?.textContent || "—"
         };
 
+        // настройки серии
         const sched = window.SchedulePanel?.getSettings?.() || {
           dayOfWeek:"", weekParityType:"ANY"
         };
         const wtSel = $("#sch-weektype")?.value;
         const weekParityType = wtSel || sched.weekParityType || "ANY";
 
+        // если dayOfWeek не выставлен панелью, берём из даты
         if (!sched.dayOfWeek){
           const dateStr = $("#date-input")?.value || "";
           sched.dayOfWeek = window.SchedulePanel.dayOfWeekFromDateStr(dateStr);
@@ -794,7 +617,7 @@
   }
 
   // =========================
-  // Подсветка заполненности
+  // Подсветка загрузки аудиторий
   // =========================
   async function refreshOccupancy(){
     const sched = window.SchedulePanel?.getSettings?.() || {
@@ -809,6 +632,7 @@
     const weekParityType = $("#sch-weektype")?.value || sched.weekParityType || "ANY";
     const slotId = Number($("#slot-filter")?.value || 0);
 
+    // единый агрегирующий запрос на слот:
     const slim = await fetchAllBookings(
       sched.dayOfWeek,
       weekParityType,
@@ -816,7 +640,7 @@
       !!sched.myOnly
     );
 
-    const usedByRoom = new Map(); // classroomId -> суммарное число людей
+    const usedByRoom = new Map(); // classroomId -> persons
     for (const b of slim) {
       const g = GroupsCache.byId.get(Number(b.groupId));
       const add = g ? Number(g.personsCount || 0) : 0;
@@ -841,17 +665,12 @@
       slotId:String(slotId)
     });
     const baseUrl = myOnly ? "/api/bookings/my" : "/api/bookings/search";
-    if (!myOnly) params.set("slim","true");
+    if (!myOnly) params.set("slim","true"); // облегчённые ответы для общего поиска
     const r = await fetch(`${baseUrl}?${params.toString()}`, { credentials:"include" });
     return r.ok ? r.json() : [];
   }
 
-  // Цвета занятости:
-  // - idle   пусто
-  // - ok     ≤100%
-  // - warn   до +25%
-  // - danger до +50%
-  // - over   > +50%
+  // Легенда: пусто | ≤100% | до +25% | до +50% | > +50%
   function paintRoom(btn, usedPersons, capacity){
     btn.classList.remove("idle","ok","warn","danger","over");
     if (!capacity || usedPersons <= 0){
@@ -885,11 +704,11 @@
   // Утилиты
   // =========================
   function classroomIdFromRoom(roomName){
-    // Если в названии есть ### — считаем это ID аудитории
+    // пробуем вытащить трёхзначный номер аудитории (101, 204, 311 ...)
     const m = String(roomName).match(/\d{3}/);
     if (m) return Number(m[0]);
 
-    // иначе стабильно хэшируем имя
+    // fallback: хэш имени
     let hash = 1000;
     for (let i=0;i<roomName.length;i++){
       hash = (hash*31 + roomName.charCodeAt(i)) >>> 0;
@@ -908,7 +727,43 @@
     }
   }
 
-  // экспортируем для внешнего вызова, если нужно
+  // экспортируем для других модулей (teacher-schedule и т.п.)
   window.planRefreshOccupancy = refreshOccupancy;
+
+  // =========================
+  // ГЛАВНЫЙ READY
+  // =========================
+  ready(async () => {
+    // 0. Заполнить селект схем + отрисовать initial план
+    await initLayoutsFlow();
+
+    // 1. Инициализировать панель расписания преподавателя (если есть)
+    window.SchedulePanel?.init?.();
+
+    // 2. Переключалка этажей
+    initFloorSwitch();
+
+    // 3. Подгрузить слоты (пары)
+    await initSlots();
+
+    // 4. Проставить сегодняшнюю дату
+    initDateField();
+
+    // 5. Подготовить тайм-зоны
+    initTimeZones();
+
+    // 6. Навесить клики по аудиториям
+    initRooms();
+
+    // 7. Подтянуть группы и метаданные аудиторий (для фильтра и подсветки)
+    await Promise.all([loadGroups(), loadRoomsMeta()]);
+
+    // 8. Инициализировать фильтр аудиториям
+    initFilterMenu();
+
+    // 9. Навесить обработчики обновления подсветки и сразу её посчитать
+    attachRefreshHandlers();
+    refreshOccupancy();
+  });
 
 })();
