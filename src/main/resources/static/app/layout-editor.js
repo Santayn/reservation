@@ -11,10 +11,17 @@
   // STATE
   // =========================
   const state = {
-    elements: [],        // все объекты на полотне
-    selectedId: null,    // id выделенного элемента
-    dragCtx: null,       // контекст перетаскивания
-    resizeCtx: null      // контекст ресайза
+    elements: [],          // все объекты на полотне
+    selectedId: null,      // id выделенного элемента
+    dragCtx: null,         // контекст перетаскивания
+    resizeCtx: null,       // контекст ресайза
+
+    buildings: [],         // [{id,name}, ...]
+    layoutsByBuilding: new Map(), // buildingId -> [{id,name,floorNumber,layoutJson?}, ...]
+    currentBuildingId: null,
+
+    currentLayoutId: null, // если null => это новая схема
+    currentLayoutDto: null // dto целиком {id, name, floorNumber, buildingId, layoutJson}
   };
 
   function makeId() {
@@ -216,7 +223,7 @@
   }
 
   // =========================
-  // РЕНДЕР ВСЕГО
+  // CANVAS
   // =========================
   const canvasEl = $("#canvas");
 
@@ -226,7 +233,6 @@
     renderJsonPreview();
   }
 
-  // --------- CANVAS RENDER ----------
   function renderCanvas() {
     canvasEl.innerHTML = "";
 
@@ -236,7 +242,7 @@
       node.dataset.id = el.id;
 
       node.style.left = el.x + "px";
-      node.style.top = el.y + "px";
+      node.style.top  = el.y + "px";
 
       let w = el.width;
       let h = el.height;
@@ -253,7 +259,7 @@
       } else if (el.type === "semicircle") {
         node.style.width = w + "px";
         node.style.height = h + "px";
-        node.style.borderTopLeftRadius = (h * 2) + "px";
+        node.style.borderTopLeftRadius  = (h * 2) + "px";
         node.style.borderTopRightRadius = (h * 2) + "px";
         node.style.borderBottomLeftRadius = "0";
         node.style.borderBottomRightRadius = "0";
@@ -264,20 +270,21 @@
       }
 
       node.style.backgroundColor = el.fill || "#fff";
-      node.style.borderColor = el.stroke || "#000";
-      node.style.borderStyle = el.strokeStyle || "solid";
-      node.style.borderWidth = "2px";
-      node.style.boxSizing = "border-box";
+      node.style.borderColor     = el.stroke || "#000";
+      node.style.borderStyle     = el.strokeStyle || "solid";
+      node.style.borderWidth     = "2px";
+      node.style.boxSizing       = "border-box";
 
-      node.style.color = "#111";
-      node.style.fontSize = "13px";
-      node.style.lineHeight = "1.2";
-      node.style.textAlign = "center";
-      node.style.display = "flex";
-      node.style.alignItems = "center";
+      node.style.color        = "#111";
+      node.style.fontSize     = "13px";
+      node.style.lineHeight   = "1.2";
+      node.style.textAlign    = "center";
+      node.style.display      = "flex";
+      node.style.alignItems   = "center";
       node.style.justifyContent = "center";
-      node.style.padding = "4px";
-      node.style.userSelect = "none";
+      node.style.padding      = "4px";
+      node.style.userSelect   = "none";
+      node.style.cursor       = "move";
 
       let textContent = "";
       switch (el.type) {
@@ -357,16 +364,18 @@
     });
   }
 
-  // --------- INSPECTOR RENDER ----------
+  // =========================
+  // INSPECTOR
+  // =========================
   function renderInspector() {
     const formEl = $("#inspector-form");
     const emptyEl = $("#no-selection");
 
     const sel = getSelected();
     if (!sel) {
-        formEl.style.display = "none";
-        emptyEl.style.display = "block";
-        return;
+      formEl.style.display = "none";
+      emptyEl.style.display = "block";
+      return;
     }
 
     formEl.style.display = "block";
@@ -424,13 +433,15 @@
     }
   }
 
-  // --------- JSON PREVIEW ----------
+  // =========================
+  // JSON PREVIEW
+  // =========================
   function renderJsonPreview() {
     const area = $("#save-json-area");
 
     const buildingId = parseInt($("#sel-building")?.value ?? "", 10) || null;
-    const floorRaw = $("#inp-floor-number")?.value ?? "";
-    const floorNumber = floorRaw === "" ? null : (parseInt(floorRaw, 10) || 0);
+    const floorStr = $("#inp-floor-number")?.value ?? "";
+    const floorNumber = floorStr === "" ? null : (parseInt(floorStr, 10) || 0);
     const layoutName = $("#inp-layout-name")?.value || "";
 
     const payload = {
@@ -446,7 +457,7 @@
   }
 
   // =========================
-  // SELECTION
+  // SELECTION / EDIT
   // =========================
   function getSelected() {
     if (!state.selectedId) return null;
@@ -458,9 +469,7 @@
     renderAll();
   }
 
-  // =========================
-  // PALETTE CLICK
-  // =========================
+  // PALETTE
   function handlePaletteClick(ev) {
     const type = ev.currentTarget.getAttribute("data-create");
     if (!type) return;
@@ -470,19 +479,18 @@
     renderAll();
   }
 
-  // =========================
   // DRAG MOVE
-  // =========================
   function startDrag(ev, id) {
     const el = state.elements.find(e => e.id === id);
     if (!el) return;
 
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-    const initX = el.x;
-    const initY = el.y;
-
-    state.dragCtx = { id, startX, startY, initX, initY };
+    state.dragCtx = {
+      id,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      initX: el.x,
+      initY: el.y
+    };
 
     window.addEventListener("mousemove", onDragMove);
     window.addEventListener("mouseup", stopDrag);
@@ -511,21 +519,16 @@
     window.removeEventListener("mouseup", stopDrag);
   }
 
-  // =========================
   // RESIZE
-  // =========================
   function startResize(ev, id, corner) {
     const el = state.elements.find(e => e.id === id);
     if (!el) return;
 
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-
     state.resizeCtx = {
       id,
       corner,
-      startX,
-      startY,
+      startX: ev.clientX,
+      startY: ev.clientY,
       initX: el.x,
       initY: el.y,
       initW: el.width,
@@ -619,8 +622,8 @@
 
     $("#inp-label-text").addEventListener("input", onInspectorChange);
 
-    // метаданные схемы → пересобираем payload превью
-    $("#sel-building")?.addEventListener("change", renderJsonPreview);
+    // метаданные схемы → только превью
+    $("#sel-building")?.addEventListener("change", onBuildingChangedExternal);
     $("#inp-floor-number")?.addEventListener("input", renderJsonPreview);
     $("#inp-layout-name")?.addEventListener("input", renderJsonPreview);
   }
@@ -652,9 +655,9 @@
     el.strokeStyle = $("#inp-stroke-style").value || el.strokeStyle;
 
     if (el.type === "room") {
-      el.roomName = $("#inp-room-name").value;
-      el.capacity = parseInt($("#inp-room-capacity").value, 10) || 0;
-      el.classroomId = parseInt($("#inp-room-id").value, 10) || 0;
+        el.roomName = $("#inp-room-name").value;
+        el.capacity = parseInt($("#inp-room-capacity").value, 10) || 0;
+        el.classroomId = parseInt($("#inp-room-id").value, 10) || 0;
     }
 
     const needsLabel =
@@ -678,12 +681,12 @@
   }
 
   // =========================
-  // SAVE
+  // BUILD PAYLOAD для бэка
   // =========================
   function buildLayoutPayloadForServer() {
     const buildingId = parseInt($("#sel-building")?.value ?? "", 10) || null;
-    const floorRaw = $("#inp-floor-number")?.value ?? "";
-    const floorNumber = floorRaw === "" ? null : (parseInt(floorRaw, 10) || 0);
+    const floorStr = $("#inp-floor-number")?.value ?? "";
+    const floorNumber = floorStr === "" ? null : (parseInt(floorStr, 10) || 0);
     const layoutName = $("#inp-layout-name")?.value || "Без названия";
 
     const layoutData = {
@@ -708,6 +711,7 @@
   }
 
   async function postLayout(payload) {
+    // создание новой схемы: POST /api/layouts
     const headers = { "Content-Type": "application/json" };
     const csrf = getCsrfHeaderMaybe();
     if (csrf) headers[csrf.name] = csrf.value;
@@ -715,9 +719,59 @@
     const resp = await fetch("/api/layouts", {
       method: "POST",
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      credentials: "include"
     });
     return resp;
+  }
+
+  async function putLayout(layoutId, payload) {
+    // обновление существующей схемы
+    const headers = { "Content-Type": "application/json" };
+    const csrf = getCsrfHeaderMaybe();
+    if (csrf) headers[csrf.name] = csrf.value;
+
+    const resp = await fetch(`/api/layouts/${layoutId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(payload),
+      credentials: "include"
+    });
+    return resp;
+  }
+
+  async function deleteLayout(layoutId) {
+    const headers = {};
+    const csrf = getCsrfHeaderMaybe();
+    if (csrf) headers[csrf.name] = csrf.value;
+
+    const resp = await fetch(`/api/layouts/${layoutId}`, {
+      method: "DELETE",
+      headers,
+      credentials: "include"
+    });
+    return resp;
+  }
+
+  async function getLayoutsForBuilding(buildingId) {
+    const resp = await fetch(`/api/layouts/by-building/${buildingId}`, {
+      method: "GET",
+      credentials: "include",
+      headers: { "Accept": "application/json" }
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return Array.isArray(data) ? data : [];
+  }
+
+  async function getLayoutById(layoutId) {
+    const resp = await fetch(`/api/layouts/${layoutId}`, {
+      method: "GET",
+      credentials: "include",
+      headers: { "Accept": "application/json" }
+    });
+    if (!resp.ok) return null;
+    return await resp.json(); // {id,name,buildingId,floorNumber,layoutJson}
   }
 
   // =========================
@@ -725,16 +779,19 @@
   // =========================
   function bindTopBarButtons() {
     $("#btn-save").addEventListener("click", onSaveClicked);
-    $("#btn-clear").addEventListener("click", onClearClicked);
-    $("#btn-delete").addEventListener("click", onDeleteClicked);
+    $("#btn-clear").addEventListener("click", onClearCanvasClicked);
+    $("#btn-delete-elem").addEventListener("click", onDeleteElementClicked);
+
+    $("#btn-load-layout").addEventListener("click", onLoadLayoutClicked);
+    $("#btn-delete-layout").addEventListener("click", onDeleteLayoutClicked);
   }
 
   async function onSaveClicked() {
-    const buildingId = $("#sel-building").value.trim();
-    const floorStr   = $("#inp-floor-number").value.trim();
-    const nameStr    = $("#inp-layout-name").value.trim();
+    const buildingIdStr = $("#sel-building").value.trim();
+    const floorStr      = $("#inp-floor-number").value.trim();
+    const nameStr       = $("#inp-layout-name").value.trim();
 
-    if (!buildingId) {
+    if (!buildingIdStr) {
       alert("Выбери здание / корпус.");
       return;
     }
@@ -750,7 +807,14 @@
     const reqBody = buildLayoutPayloadForServer();
 
     try {
-      const resp = await postLayout(reqBody);
+      let resp;
+      // если currentLayoutId == null → новая схема (POST)
+      // иначе → обновление (PUT)
+      if (state.currentLayoutId == null) {
+        resp = await postLayout(reqBody);
+      } else {
+        resp = await putLayout(state.currentLayoutId, reqBody);
+      }
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
@@ -759,6 +823,15 @@
       }
 
       const saved = await resp.json();
+      state.currentLayoutId  = saved.id;
+      state.currentLayoutDto = saved;
+
+      // перегружаем список схем для текущего корпуса
+      await refreshLayoutsInUI();
+
+      // выставим селект на только что сохранённую схему
+      $("#sel-existing-layout").value = String(saved.id);
+
       alert(
         "Схема сохранена.\n" +
         "ID схемы: " + saved.id + "\n" +
@@ -766,21 +839,20 @@
         "Этаж: " + (saved.floorNumber ?? "—") + "\n" +
         "Название: " + saved.name
       );
-      console.log("Saved layout:", saved);
     } catch (e) {
       console.error(e);
       alert("Сервер недоступен или сеть прервалась. Схема не сохранена.");
     }
   }
 
-  function onClearClicked() {
+  function onClearCanvasClicked() {
     if (!confirm("Точно очистить полотно целиком?")) return;
     state.elements = [];
     state.selectedId = null;
     renderAll();
   }
 
-  function onDeleteClicked() {
+  function onDeleteElementClicked() {
     const sel = getSelected();
     if (!sel) {
       alert("Нечего удалять — элемент не выбран.");
@@ -794,6 +866,188 @@
   }
 
   // =========================
+  // LOAD / DELETE LAYOUT (из БД)
+  // =========================
+  async function onLoadLayoutClicked() {
+    const layoutId = pickSelectedLayoutId();
+    if (!layoutId) {
+      // выбрана "— новая схема —"
+      resetEditorToNewScheme();
+      return;
+    }
+
+    const dto = await getLayoutById(layoutId);
+    if (!dto) {
+      alert("Не удалось загрузить схему с сервера.");
+      return;
+    }
+
+    // dto: {id,name,buildingId,floorNumber,layoutJson}
+    loadDtoIntoEditor(dto);
+  }
+
+  async function onDeleteLayoutClicked() {
+    const layoutId = pickSelectedLayoutId();
+    if (!layoutId) {
+      alert("Сначала выбери схему (не 'новая схема').");
+      return;
+    }
+    const ok = confirm("Удалить эту схему целиком?");
+    if (!ok) return;
+
+    const resp = await deleteLayout(layoutId);
+    if (!resp.ok) {
+      alert("Не удалось удалить схему (сервер вернул ошибку).");
+      return;
+    }
+
+    // после удаления перезагружаем список схем корпуса
+    await refreshLayoutsInUI();
+    resetEditorToNewScheme();
+
+    alert("Схема удалена.");
+  }
+
+  function pickSelectedLayoutId() {
+    const raw = $("#sel-existing-layout").value;
+    if (!raw) return null;
+    const idNum = parseInt(raw, 10);
+    return Number.isNaN(idNum) ? null : idNum;
+  }
+
+  function resetEditorToNewScheme() {
+    state.currentLayoutId  = null;
+    state.currentLayoutDto = null;
+    state.elements = [];
+    state.selectedId = null;
+
+    $("#sel-existing-layout").value = "";
+    $("#inp-floor-number").value = "";
+    $("#inp-layout-name").value  = "";
+
+    renderAll();
+  }
+
+  function loadDtoIntoEditor(dto) {
+    state.currentLayoutId  = dto.id;
+    state.currentLayoutDto = dto;
+
+    // выставим тело формы
+    $("#sel-building").value = dto.buildingId != null ? String(dto.buildingId) : "";
+    $("#inp-floor-number").value = dto.floorNumber != null ? dto.floorNumber : "";
+    $("#inp-layout-name").value  = dto.name || "";
+
+    // разбор layoutJson → elements
+    let parsedEls = [];
+    try {
+      const parsed = dto.layoutJson ? JSON.parse(dto.layoutJson) : {};
+      if (parsed && Array.isArray(parsed.elements)) {
+        parsedEls = parsed.elements;
+      }
+    } catch (e) {
+      console.warn("layoutJson не парсится у схемы", e);
+    }
+
+    state.elements = parsedEls.map(e => ({...e}));
+    state.selectedId = null;
+
+    renderAll();
+  }
+
+  // =========================
+  // BUILDINGS + LAYOUT LIST
+  // =========================
+  async function loadBuildingsToSelect() {
+    const sel = $("#sel-building");
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "— выберите здание —";
+    sel.appendChild(opt0);
+
+    try {
+      const resp = await fetch("/api/buildings", {
+        method: "GET",
+        credentials: "include",
+        headers: { "Accept": "application/json" }
+      });
+      if (!resp.ok) {
+        console.warn("Не удалось загрузить здания, HTTP " + resp.status);
+        return;
+      }
+      const list = await resp.json(); // [{id,name},...]
+      state.buildings = Array.isArray(list) ? list : [];
+      state.buildings.forEach(b => {
+        const opt = document.createElement("option");
+        opt.value = String(b.id);
+        opt.textContent = b.name || ("Здание #" + b.id);
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error("Ошибка загрузки корпусов:", e);
+      state.buildings = [];
+    }
+  }
+
+  async function refreshLayoutsInUI() {
+    // перечитать схемы для текущего здания и заполнить селект
+    const bId = state.currentBuildingId;
+    if (!bId) {
+      fillLayoutsSelect([]);
+      return;
+    }
+
+    const list = await getLayoutsForBuilding(bId);
+    state.layoutsByBuilding.set(bId, list);
+    fillLayoutsSelect(list);
+  }
+
+  function fillLayoutsSelect(list) {
+    const selLay = $("#sel-existing-layout");
+    selLay.innerHTML = "";
+
+    // "новая схема"
+    {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— новая схема —";
+      selLay.appendChild(opt);
+    }
+
+    list.forEach(l => {
+      const floorPart = (l.floorNumber != null)
+        ? `этаж ${l.floorNumber}`
+        : "этаж ?";
+      const namePart = l.name ? ` — ${l.name}` : "";
+      const opt = document.createElement("option");
+      opt.value = String(l.id);
+      opt.textContent = floorPart + namePart;
+      selLay.appendChild(opt);
+    });
+
+    // если у нас уже есть текущая схема, выставим её
+    if (state.currentLayoutId != null) {
+      selLay.value = String(state.currentLayoutId);
+    } else {
+      selLay.value = "";
+    }
+  }
+
+  async function onBuildingChangedExternal() {
+    // пользователь сменил корпус вручную в инспекторе/шапке
+    const raw = $("#sel-building").value;
+    const bId = raw === "" ? null : parseInt(raw, 10);
+    state.currentBuildingId = (bId == null || Number.isNaN(bId)) ? null : bId;
+
+    // обновляем список схем для этого корпуса
+    await refreshLayoutsInUI();
+
+    // если я сменил корпус, но редактирую уже существующую схему от другого корпуса —
+    // оставляем текущие элементы, но это может стать "новой схемой" при сохранении.
+    renderJsonPreview();
+  }
+
+  // =========================
   // CANVAS background click
   // =========================
   canvasEl.addEventListener("mousedown", (ev) => {
@@ -804,41 +1058,6 @@
   });
 
   // =========================
-  // INIT BUILDINGS LIST
-  // =========================
-  async function loadBuildingsToSelect() {
-    const sel = $("#sel-building");
-    if (!sel) return;
-
-    // очистим, поставим плейсхолдер
-    sel.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "— выберите здание —";
-    sel.appendChild(opt0);
-
-    try {
-      const resp = await fetch("/api/buildings", {
-        method: "GET",
-        headers: { "Accept": "application/json" }
-      });
-      if (!resp.ok) {
-        console.warn("Не удалось загрузить здания, HTTP " + resp.status);
-        return;
-      }
-      const list = await resp.json(); // [{id, name}, ...]
-      list.forEach(b => {
-        const opt = document.createElement("option");
-        opt.value = String(b.id);
-        opt.textContent = b.name || ("Здание #" + b.id);
-        sel.appendChild(opt);
-      });
-    } catch (e) {
-      console.error("Ошибка загрузки корпусов:", e);
-    }
-  }
-
-  // =========================
   // INIT
   // =========================
   function initPaletteButtons() {
@@ -847,14 +1066,33 @@
     });
   }
 
+  function bindTopUIEvents() {
+    // уже есть bindTopBarButtons()
+    // но нам нужно ещё слушать смену корпуса отдельно в onBuildingChangedExternal()
+    $("#sel-building").addEventListener("change", onBuildingChangedExternal);
+  }
+
   async function init() {
     initPaletteButtons();
     bindInspectorInputs();
     bindTopBarButtons();
+    bindTopUIEvents();
 
     await loadBuildingsToSelect();
 
-    renderAll();
+    // после загрузки корпусов:
+    // выберем первый корпус (если есть) по умолчанию
+    if (state.buildings.length > 0) {
+      state.currentBuildingId = state.buildings[0].id;
+      $("#sel-building").value = String(state.currentBuildingId);
+      await refreshLayoutsInUI(); // подгрузим схемы
+    } else {
+      // корпусов нет
+      fillLayoutsSelect([]);
+    }
+
+    // стартуем в режиме "новая схема"
+    resetEditorToNewScheme();
   }
 
   init();

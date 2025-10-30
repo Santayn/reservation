@@ -15,4 +15,7 @@ public interface BuildingLayoutLinkRepository extends JpaRepository<BuildingLayo
 
     // найти хоть один линк по layout_id (например, когда нужно узнать "а к какому зданию относится эта схема")
     Optional<BuildingLayoutLink> findFirstByLayout_IdOrderByFloorNumberAsc(Long layoutId);
+    
+    List<BuildingLayoutLink> findAllByLayout_Id(Long layoutId);
 }
+

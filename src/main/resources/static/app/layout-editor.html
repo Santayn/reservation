@@ -7,7 +7,7 @@
 
     <link rel="stylesheet" href="/app/layout-editor.css" />
 
-    <!-- Если потом включишь CSRF в Spring Security:
+    <!-- CSRF подключишь при необходимости
     <meta name="_csrf" content="${_csrf.token}">
     <meta name="_csrf_header" content="${_csrf.headerName}">
     -->
@@ -32,6 +32,23 @@
                     </select>
                 </div>
 
+                <!-- СУЩЕСТВУЮЩИЕ СХЕМЫ В ЭТОМ ЗДАНИИ -->
+                <div class="le-field" style="min-width:240px;">
+                    <label class="le-label" for="sel-existing-layout">Существующая схема</label>
+                    <select id="sel-existing-layout" class="le-input">
+                        <option value="">— новая схема —</option>
+                    </select>
+
+                    <div class="le-top-actions-row" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+                        <button id="btn-load-layout" class="le-btn" style="min-width:140px;">
+                            Загрузить схему
+                        </button>
+                        <button id="btn-delete-layout" class="le-btn danger" style="min-width:140px;">
+                            Удалить схему
+                        </button>
+                    </div>
+                </div>
+
                 <!-- ЭТАЖ № -->
                 <div class="le-field" style="min-width:90px;">
                     <label class="le-label" for="inp-floor-number">Этаж №</label>
@@ -52,11 +69,11 @@
                            placeholder="Например: 2 этаж, левое крыло" />
                 </div>
 
-                <!-- actions -->
+                <!-- actions с полотном и сохранением -->
                 <div class="le-top-actions"
                      style="display:flex; flex-wrap:wrap; gap:8px;">
                     <button id="btn-save" class="le-btn">Сохранить схему</button>
-                    <button id="btn-delete" class="le-btn danger">Удалить выделенный</button>
+                    <button id="btn-delete-elem" class="le-btn danger">Удалить выделенный</button>
                     <button id="btn-clear" class="le-btn warn">Очистить полотно</button>
                 </div>
             </div>
@@ -129,7 +146,6 @@
                     </div>
                 </div>
 
-                <!-- размеры для всего, кроме круга -->
                 <div class="le-row2" id="size-row">
                     <div class="le-field">
                         <label class="le-label">Ширина</label>
@@ -141,7 +157,6 @@
                     </div>
                 </div>
 
-                <!-- диаметр для круглой зоны -->
                 <div class="le-field" id="circle-radius-row" style="display:none;">
                     <label class="le-label">Диаметр круглой зоны</label>
                     <input id="inp-radius" class="le-input" type="number" min="10">
@@ -199,7 +214,7 @@
             </form>
 
             <section class="le-save-preview">
-                <label class="le-label" for="save-json-area">Текущее состояние (JSON):</label>
+                <label class="le-label" for="save-json-area">Текущее состояние (JSON для сохранения):</label>
                 <textarea id="save-json-area" class="le-json-dump" readonly></textarea>
             </section>
         </aside>

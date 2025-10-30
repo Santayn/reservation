@@ -1,53 +1,25 @@
 package org.santayn.reservation.web.controller.rest;
 
 import jakarta.validation.Valid;
+import java.util.List;
 import org.santayn.reservation.service.BuildingLayoutService;
 import org.santayn.reservation.web.dto.layout.BuildingLayoutCreateRequest;
 import org.santayn.reservation.web.dto.layout.BuildingLayoutResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * REST-контроллер для работы со схемами этажей зданий.
  *
- * Флоу для фронта теперь такой:
- *
- * 1) Пользователь выбирает корпус (Building).
- *    (у тебя уже должен быть эндпоинт типа GET /api/buildings)
- *
- * 2) Фронт загружает список этажей для этого корпуса:
- *    GET /api/layouts/by-building/{buildingId}
- *    → массив BuildingLayoutResponse:
- *       [
- *         { "id":12, "buildingId":5, "floorNumber":1, "name":"Этаж 1", "layoutJson":"{...}" },
- *         { "id":13, "buildingId":5, "floorNumber":2, "name":"Этаж 2", "layoutJson":"{...}" }
- *       ]
- *
- *    Фронт показывает список этажей (floorNumber) пользователю.
- *
- * 3) Когда пользователь выбрал конкретный этаж (layoutId),
- *    фронт подгружает схему этого этажа и рисует её:
- *    GET /api/layouts/{layoutId}
- *    → BuildingLayoutResponse (layoutJson внутри)
- *
- * 4) Админ в конструкторе плана создаёт/обновляет новую схему этажа:
- *    POST /api/layouts
- *    (нужна роль ADMIN)
- *
- *    В теле:
- *      {
- *        "buildingId": 5,
- *        "floorNumber": 2,
- *        "name": "Этаж 2 (обновлён)",
- *        "layoutJson": "{...}"
- *      }
- *
- *    После сохранения:
- *     - создаётся (или обновляется) схема BuildingLayout
- *     - создаётся/обновляется BuildingLayoutLink (buildingId+floorNumber -> эта схема)
- *     - создаются/обновляются аудитории в classrooms
+ * Поддерживает CRUD:
+ *  - GET  /api/layouts/by-building/{buildingId} — список схем для корпуса
+ *  - GET  /api/layouts/{layoutId}               — получить схему
+ *  - GET  /api/layouts                          — все схемы (админ)
+ *  - POST /api/layouts                          — создать схему (ADMIN)
+ *  - PUT  /api/layouts/{layoutId}               — обновить схему (ADMIN)
+ *  - DELETE /api/layouts/{layoutId}             — удалить схему (ADMIN)
  */
 @RestController
 @RequestMapping("/api/layouts")
@@ -59,64 +31,43 @@ public class BuildingLayoutController {
         this.service = service;
     }
 
-    /**
-     * Создать (или актуализировать) схему этажа.
-     *
-     * Требуется роль ADMIN.
-     *
-     * Возвращает BuildingLayoutResponse с полями:
-     *   id          — id схемы (layoutId)
-     *   buildingId  — id корпуса, куда мы эту схему подвязали
-     *   floorNumber — номер этажа в этом корпусе
-     *   name        — имя схемы
-     *   layoutJson  — сам план
-     */
+    @GetMapping("/by-building/{buildingId}")
+    public ResponseEntity<List<BuildingLayoutResponse>> listByBuilding(@PathVariable Long buildingId) {
+        return ResponseEntity.ok(service.findByBuilding(buildingId));
+    }
+
+    @GetMapping("/{layoutId}")
+    public ResponseEntity<BuildingLayoutResponse> getLayout(@PathVariable Long layoutId) {
+        return ResponseEntity.ok(service.getById(layoutId));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<BuildingLayoutResponse>> listAllLayouts() {
+        return ResponseEntity.ok(service.findAllLayouts());
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public BuildingLayoutResponse createLayout(
-            @Valid @RequestBody BuildingLayoutCreateRequest request
-    ) {
-        return service.create(request);
+    public ResponseEntity<BuildingLayoutResponse> createLayout(
+            @Valid @RequestBody BuildingLayoutCreateRequest request) {
+        BuildingLayoutResponse dto = service.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
 
-    /**
-     * Получить все этажи выбранного корпуса.
-     *
-     * Пример ответа:
-     * [
-     *   { "id":12, "buildingId":5, "floorNumber":1, "name":"Этаж 1", "layoutJson":"{...}" },
-     *   { "id":13, "buildingId":5, "floorNumber":2, "name":"Этаж 2", "layoutJson":"{...}" }
-     * ]
-     *
-     * Эти данные фронт использует, чтобы:
-     *   - заполнить выпадающий список этажей
-     *   - знать, какой layoutId грузить для выбранного этажа
-     */
-    @GetMapping("/by-building/{buildingId}")
-    public List<BuildingLayoutResponse> listByBuilding(@PathVariable Long buildingId) {
-        return service.findByBuilding(buildingId);
+    @PutMapping("/{layoutId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<BuildingLayoutResponse> updateLayout(
+            @PathVariable Long layoutId,
+            @Valid @RequestBody BuildingLayoutCreateRequest request) {
+        BuildingLayoutResponse dto = service.update(layoutId, request);
+        return ResponseEntity.ok(dto);
     }
 
-    /**
-     * Получить конкретную схему по её layoutId.
-     *
-     * В ответе будет layoutJson (чертёж), а также buildingId и floorNumber,
-     * чтобы фронт понимал, к какому корпусу и какому этажу относится отображаемый план.
-     */
-    @GetMapping("/{layoutId}")
-    public BuildingLayoutResponse getLayout(@PathVariable Long layoutId) {
-        return service.getById(layoutId);
-    }
-
-    /**
-     * Админский/отладочный эндпоинт:
-     * вернуть ВСЕ этажи всех корпусов.
-     *
-     * Обычному пользователю это обычно не нужно,
-     * но в админке может быть удобно.
-     */
-    @GetMapping
-    public List<BuildingLayoutResponse> listAllLayouts() {
-        return service.findAllLayouts();
+    @DeleteMapping("/{layoutId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> deleteLayout(@PathVariable Long layoutId) {
+        service.delete(layoutId);
+        return ResponseEntity.noContent().build();
     }
 }
