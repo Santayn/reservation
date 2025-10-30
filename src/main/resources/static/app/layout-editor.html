@@ -6,6 +6,14 @@
     <title>Конструктор плана корпуса</title>
 
     <link rel="stylesheet" href="/app/layout-editor.css">
+
+    <!--
+      Если потом включишь CSRF в Spring Security,
+      можно будет положить сюда мету с токеном, типа:
+      <meta name="_csrf" content="${_csrf.token}">
+      <meta name="_csrf_header" content="${_csrf.headerName}">
+      И в fetch() из layout-editor.js брать этот токен.
+    -->
 </head>
 <body>
 <div class="le-page">
@@ -14,10 +22,42 @@
     <header class="le-topbar">
         <div class="le-topbar-left">
             <h1 class="le-title">Конструктор плана корпуса</h1>
-            <div class="le-top-actions">
-                <button id="btn-save" class="le-btn">Сохранить схему</button>
-                <button id="btn-delete" class="le-btn danger">Удалить выделенный</button>
-                <button id="btn-clear" class="le-btn warn">Очистить полотно</button>
+
+            <!-- Блок метаданных схемы -->
+            <div class="le-top-meta" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+
+                <div class="le-field" style="min-width:120px;">
+                    <label class="le-label" for="inp-building-id">ID корпуса (buildingId)</label>
+                    <input id="inp-building-id"
+                           class="le-input"
+                           type="number"
+                           min="1"
+                           placeholder="1" />
+                </div>
+
+                <div class="le-field" style="min-width:90px;">
+                    <label class="le-label" for="inp-floor">Этаж</label>
+                    <input id="inp-floor"
+                           class="le-input"
+                           type="number"
+                           step="1"
+                           min="0"
+                           placeholder="2" />
+                </div>
+
+                <div class="le-field" style="min-width:220px;">
+                    <label class="le-label" for="inp-layout-name">Название схемы</label>
+                    <input id="inp-layout-name"
+                           class="le-input"
+                           type="text"
+                           placeholder="Корпус А — этаж 2" />
+                </div>
+
+                <div class="le-top-actions" style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <button id="btn-save" class="le-btn">Сохранить схему</button>
+                    <button id="btn-delete" class="le-btn danger">Удалить выделенный</button>
+                    <button id="btn-clear" class="le-btn warn">Очистить полотно</button>
+                </div>
             </div>
         </div>
 

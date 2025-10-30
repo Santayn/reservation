@@ -8,17 +8,35 @@
 </head>
 <body>
 <div class="wrap">
-    <h1>Схема здания с 3 этажами</h1>
-    <p class="lead">Выберите дату и слот для разовой брони или задайте параметры серии (режим, неделя, день, тайм-зона), затем кликните по аудитории.</p>
+    <h1>
+        Схема здания:
+        <span id="current-layout-name">—</span>
+    </h1>
+    <p class="lead">
+        Выберите схему, этаж и слот. Кликните по аудитории, чтобы посмотреть доступность или создать бронь.
+    </p>
 
     <div class="toolbar" role="toolbar" aria-label="Фильтры">
-        <!-- ДАТА (одно поле) -->
+
+        <!-- СХЕМА (без корпуса) -->
+        <div class="group" role="group" aria-label="Выбор схемы">
+            <strong>Схема:</strong>
+            <select id="layout-select"
+                    class="inline-input"
+                    style="min-width:220px"
+                    aria-label="Схема этажа/плана здания">
+                <!-- сюда из JS загрузятся схемы -->
+                <!-- <option value="55" selected>Этаж 2 (после ремонта)</option> -->
+            </select>
+        </div>
+
+        <!-- ДАТА -->
         <div class="group">
             <strong>Дата:</strong>
             <input id="date-input" type="date" aria-label="Дата бронирования" />
         </div>
 
-        <!-- Этаж -->
+        <!-- ЭТАЖ -->
         <div class="group floor-switch" role="group" aria-label="Выбор этажа">
             <strong>Этаж:</strong>
             <button type="button" data-floor="1" class="active" aria-pressed="true">1</button>
@@ -26,7 +44,7 @@
             <button type="button" data-floor="3" aria-pressed="false">3</button>
         </div>
 
-        <!-- Слот -->
+        <!-- СЛОТ -->
         <div class="group" role="group" aria-label="Выбор слота">
             <strong>Слот:</strong>
             <select id="slot-filter" aria-label="Слот времени">
@@ -34,7 +52,7 @@
             </select>
         </div>
 
-        <!-- Серия / день / TZ -->
+        <!-- СЕРИЯ / ДЕНЬ / TZ -->
         <div class="group" role="group" aria-label="Параметры серии">
             <strong>Серия:</strong>
             <label style="margin-left:6px;">
@@ -65,7 +83,6 @@
 
             <label style="margin-left:10px;"><strong>TZ:</strong></label>
             <select id="sch-tz" aria-label="Тайм-зона" style="min-width:240px">
-                <!-- 24 «чистых» зоны, дефолт — Москва -->
                 <option value="Pacific/Midway">(UTC-11) Pacific/Midway</option>
                 <option value="Pacific/Honolulu">(UTC-10) Pacific/Honolulu</option>
                 <option value="America/Anchorage">(UTC-09) America/Anchorage</option>
@@ -94,7 +111,7 @@
             </select>
         </div>
 
-        <!-- Фильтр -->
+        <!-- Фильтр факультет/специализация -->
         <div class="group filter-wrap">
             <button id="filter-btn" type="button">Фильтр</button>
             <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
@@ -113,6 +130,7 @@
             </div>
         </div>
 
+        <!-- Легенда загрузки -->
         <div class="group" aria-hidden="false">
             <span class="badge" style="background:#eee;border-color:#bbb">пусто</span>
             <span class="badge" style="background:#e8f8ef;border-color:#6ccf96">≤100%</span>
@@ -121,13 +139,17 @@
             <span class="badge" style="background:#111;color:#fff;border-color:#000">&gt; +50%</span>
         </div>
 
+        <!-- Навигация -->
         <div class="actions">
             <a class="btn btn-menu" href="/app/mainmenu.html">Главное меню</a>
             <a class="btn" href="/cabinet/me.html">Личный кабинет</a>
             <a class="btn" href="/logout">Выход</a>
 
-            <!-- новая кнопка перехода в конструктор плана -->
-            <a class="btn" href="/app/layout-editor.html" style="background:#1b6;border-color:#1b6;color:#fff;">
+            <!-- переход в конструктор плана -->
+            <a class="btn"
+               id="to-editor-btn"
+               href="/app/layout-editor.html"
+               style="background:#1b6;border-color:#1b6;color:#fff;">
                 Конструктор плана
             </a>
         </div>
@@ -140,9 +162,14 @@
         <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
     </section>
 
-    <!-- План здания (как у вас было) -->
-    <div class="building" aria-label="План этажей">
+    <!-- План здания -->
+    <div id="building-plan" class="building" aria-label="План этажей">
+        <!--
+            Это дефолтная статика. JS (plan-page.js) может заменить innerHTML у #building-plan
+            на сгенерированную структуру из выбранной схемы.
+        -->
         <div class="wings">
+
             <!-- Левый корпус -->
             <section class="wing" aria-label="Левый корпус">
                 <h3>Левый корпус</h3>

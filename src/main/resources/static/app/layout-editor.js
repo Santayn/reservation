@@ -24,23 +24,6 @@
   // =========================
   // ФАБРИКА ЭЛЕМЕНТОВ
   // =========================
-  // Общие поля для большинства:
-  //  - id
-  //  - type
-  //  - x, y
-  //  - width, height
-  //  - fill, stroke, strokeStyle
-  //  - labelText
-  //
-  // Спец. поля для room:
-  //  - roomName
-  //  - capacity
-  //  - classroomId
-  //
-  // Спец. форма:
-  //  - round  -> круг, width==height, рендер border-radius:50%, инспектор управляет диаметром
-  //  - oval   -> овал (эллипс), border-radius:50%, но ширина и высота независимы
-  //  - semicircle -> полукруг. Рисуем «полудиск» (верхняя дуга), через большие радиусы двух верхних углов
   function createElement(type) {
     const id = makeId();
 
@@ -264,7 +247,6 @@
 
       // форма
       if (el.type === "round") {
-        // круг: держим width==height
         const d = el.width;
         node.style.width = d + "px";
         node.style.height = d + "px";
@@ -272,18 +254,15 @@
       } else if (el.type === "oval") {
         node.style.width = w + "px";
         node.style.height = h + "px";
-        node.style.borderRadius = "50%"; // эллипс
+        node.style.borderRadius = "50%";
       } else if (el.type === "semicircle") {
         node.style.width = w + "px";
         node.style.height = h + "px";
-        // делаем нечто похожее на верхний полукруг:
-        // большие радиусы сверху, маленькие снизу
         node.style.borderTopLeftRadius = (h * 2) + "px";
         node.style.borderTopRightRadius = (h * 2) + "px";
         node.style.borderBottomLeftRadius = "0";
         node.style.borderBottomRightRadius = "0";
       } else {
-        // прямоугольники, комнаты, коридоры, стены, двери, лифты и т.д.
         node.style.width = w + "px";
         node.style.height = h + "px";
         node.style.borderRadius = "4px";
@@ -412,7 +391,6 @@
 
     // Размеры
     if (sel.type === "round") {
-      // round управляется диаметром
       $("#circle-radius-row").style.display = "";
       $("#size-row").style.display = "none";
       $("#inp-radius").value = sel.width;
@@ -464,10 +442,23 @@
   // --------- JSON PREVIEW ----------
   function renderJsonPreview() {
     const area = $("#save-json-area");
-    const data = {
-      elements: state.elements
+
+    const buildingId = parseInt($("#inp-building-id")?.value ?? "", 10) || 0;
+    const floorVal = $("#inp-floor")?.value ?? "";
+    const floorNumber = floorVal === "" ? null : (parseInt(floorVal, 10) || 0);
+    const layoutName = $("#inp-layout-name")?.value || "";
+
+    // показываем именно тот объект, который уйдет на сервер
+    const previewPayload = {
+      name: layoutName || "Без названия",
+      buildingId: buildingId,
+      floorNumber: floorNumber,
+      layoutJson: JSON.stringify({
+        elements: state.elements
+      })
     };
-    area.value = JSON.stringify(data, null, 2);
+
+    area.value = JSON.stringify(previewPayload, null, 2);
   }
 
   // =========================
@@ -602,7 +593,6 @@
     }
 
     if (isRound) {
-      // круг: держим одинаковый диаметр
       const d = Math.max(20, Math.max(newW, newH));
       el.x = newX;
       el.y = newY;
@@ -645,6 +635,11 @@
     $("#inp-room-id").addEventListener("input", onInspectorChange);
 
     $("#inp-label-text").addEventListener("input", onInspectorChange);
+
+    // изменения метаданных схемы тоже сразу обновляют превью
+    $("#inp-building-id")?.addEventListener("input", renderJsonPreview);
+    $("#inp-floor")?.addEventListener("input", renderJsonPreview);
+    $("#inp-layout-name")?.addEventListener("input", renderJsonPreview);
   }
 
   function onInspectorChange() {
@@ -705,6 +700,49 @@
   }
 
   // =========================
+  // SAVE PAYLOAD BUILD + POST
+  // =========================
+  function buildLayoutPayloadForServer() {
+    const buildingId = parseInt($("#inp-building-id")?.value ?? "", 10) || 0;
+    const floorVal = $("#inp-floor")?.value ?? "";
+    const floorNumber = floorVal === "" ? null : (parseInt(floorVal, 10) || 0);
+    const layoutName = $("#inp-layout-name")?.value || "Без названия";
+
+    const layoutData = {
+      elements: state.elements
+    };
+
+    return {
+      name: layoutName,
+      buildingId: buildingId,
+      floorNumber: floorNumber,
+      layoutJson: JSON.stringify(layoutData)
+    };
+  }
+
+  function getCsrfHeaderMaybe() {
+    const tokenMeta = document.querySelector('meta[name="_csrf"]');
+    const headerMeta = document.querySelector('meta[name="_csrf_header"]');
+    if (tokenMeta && headerMeta) {
+      return { name: headerMeta.content, value: tokenMeta.content };
+    }
+    return null;
+  }
+
+  async function postLayout(payload) {
+    const headers = { "Content-Type": "application/json" };
+    const csrf = getCsrfHeaderMaybe();
+    if (csrf) headers[csrf.name] = csrf.value;
+
+    const resp = await fetch("/api/layouts", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+    return resp;
+  }
+
+  // =========================
   // TOP BAR BUTTONS
   // =========================
   function bindTopBarButtons() {
@@ -713,10 +751,25 @@
     $("#btn-delete").addEventListener("click", onDeleteClicked);
   }
 
-  function onSaveClicked() {
-    const payload = { elements: state.elements };
-    console.log("SAVE SCHEMA:", payload);
-    alert("Схема собрана. Проверь JSON внизу или в консоли.");
+  async function onSaveClicked() {
+    const reqBody = buildLayoutPayloadForServer();
+
+    try {
+      const resp = await postLayout(reqBody);
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        alert("Ошибка сохранения схемы.\n" + (errText || ("HTTP " + resp.status)));
+        return;
+      }
+
+      const saved = await resp.json();
+      alert("Схема сохранена.\nID: " + saved.id + "\nИмя: " + saved.name);
+      console.log("Saved layout:", saved);
+    } catch (e) {
+      console.error(e);
+      alert("Сервер недоступен или сеть прервалась. Схема не сохранена.");
+    }
   }
 
   function onClearClicked() {
@@ -752,6 +805,18 @@
   // =========================
   // INIT
   // =========================
+  function tryPrefillMetaFromQuery() {
+    // Удобно: можно открыть /app/layout-editor.html?buildingId=3&floor=2&name=Корпус%20А
+    const p = new URLSearchParams(location.search);
+    const b = p.get("buildingId");
+    const f = p.get("floor");
+    const n = p.get("name");
+
+    if (b && $("#inp-building-id")) $("#inp-building-id").value = b;
+    if (f && $("#inp-floor")) $("#inp-floor").value = f;
+    if (n && $("#inp-layout-name")) $("#inp-layout-name").value = decodeURIComponent(n);
+  }
+
   function init() {
     // палитра
     $$(".le-tool-btn").forEach(btn => {
@@ -760,6 +825,8 @@
 
     bindInspectorInputs();
     bindTopBarButtons();
+
+    tryPrefillMetaFromQuery();
 
     renderAll();
   }
