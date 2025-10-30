@@ -28,8 +28,7 @@
     const id = makeId();
 
     switch (type) {
-
-      case "room": // аудитория
+      case "room":
         return {
           id,
           type: "room",
@@ -46,7 +45,7 @@
           labelText: ""
         };
 
-      case "corridor": // коридор / зона
+      case "corridor":
         return {
           id,
           type: "corridor",
@@ -60,7 +59,7 @@
           labelText: "Коридор / зона"
         };
 
-      case "wall": // стена
+      case "wall":
         return {
           id,
           type: "wall",
@@ -74,7 +73,7 @@
           labelText: "Стена"
         };
 
-      case "door": // дверь / вход
+      case "door":
         return {
           id,
           type: "door",
@@ -88,7 +87,7 @@
           labelText: "Вход"
         };
 
-      case "lift": // лифт
+      case "lift":
         return {
           id,
           type: "lift",
@@ -102,7 +101,7 @@
           labelText: "Лифт"
         };
 
-      case "stairs": // лестница
+      case "stairs":
         return {
           id,
           type: "stairs",
@@ -116,7 +115,7 @@
           labelText: "Лестница"
         };
 
-      case "wc": // туалет
+      case "wc":
         return {
           id,
           type: "wc",
@@ -130,7 +129,7 @@
           labelText: "WC"
         };
 
-      case "label": // подпись/надпись
+      case "label":
         return {
           id,
           type: "label",
@@ -144,21 +143,21 @@
           labelText: "Надпись"
         };
 
-      case "round": // круглая зона / атриум
+      case "round":
         return {
           id,
           type: "round",
           x: 450,
           y: 100,
           width: 100,
-          height: 100, // width==height
+          height: 100,
           fill: "#f0fff6",
           stroke: "#1e6824",
           strokeStyle: "dashed",
           labelText: "Зона"
         };
 
-      case "rect": // обычный прямоугольник / блок
+      case "rect":
         return {
           id,
           type: "rect",
@@ -172,7 +171,7 @@
           labelText: "Прямоугольник"
         };
 
-      case "oval": // овал / эллипс
+      case "oval":
         return {
           id,
           type: "oval",
@@ -186,7 +185,7 @@
           labelText: "Овал"
         };
 
-      case "semicircle": // полукруг
+      case "semicircle":
         return {
           id,
           type: "semicircle",
@@ -201,7 +200,6 @@
         };
 
       default:
-        // fallback на rect
         return {
           id,
           type: "rect",
@@ -237,15 +235,12 @@
       node.className = "le-elem";
       node.dataset.id = el.id;
 
-      // позиция
       node.style.left = el.x + "px";
       node.style.top = el.y + "px";
 
-      // базовые размеры
       let w = el.width;
       let h = el.height;
 
-      // форма
       if (el.type === "round") {
         const d = el.width;
         node.style.width = d + "px";
@@ -268,14 +263,12 @@
         node.style.borderRadius = "4px";
       }
 
-      // цвета / рамка
       node.style.backgroundColor = el.fill || "#fff";
       node.style.borderColor = el.stroke || "#000";
       node.style.borderStyle = el.strokeStyle || "solid";
       node.style.borderWidth = "2px";
       node.style.boxSizing = "border-box";
 
-      // текстовые стили
       node.style.color = "#111";
       node.style.fontSize = "13px";
       node.style.lineHeight = "1.2";
@@ -334,13 +327,11 @@
       }
       node.textContent = textContent;
 
-      // выделение
       if (state.selectedId === el.id) {
         node.classList.add("selected");
         addResizeHandles(node, el);
       }
 
-      // обработчики
       node.addEventListener("mousedown", (ev) => {
         ev.stopPropagation();
         selectElement(el.id);
@@ -351,7 +342,6 @@
     });
   }
 
-  // рисуем ручки по углам
   function addResizeHandles(node, el) {
     const corners = ["tl", "tr", "bl", "br"];
     corners.forEach(corner => {
@@ -374,22 +364,20 @@
 
     const sel = getSelected();
     if (!sel) {
-      formEl.style.display = "none";
-      emptyEl.style.display = "block";
-      return;
+        formEl.style.display = "none";
+        emptyEl.style.display = "block";
+        return;
     }
 
     formEl.style.display = "block";
     emptyEl.style.display = "none";
 
-    // Общие поля
     $("#inp-id").value = sel.id;
     $("#inp-type").value = sel.type;
 
     $("#inp-x").value = sel.x ?? 0;
     $("#inp-y").value = sel.y ?? 0;
 
-    // Размеры
     if (sel.type === "round") {
       $("#circle-radius-row").style.display = "";
       $("#size-row").style.display = "none";
@@ -401,12 +389,10 @@
       $("#inp-h").value = sel.height ?? 0;
     }
 
-    // Цвета и рамка
     $("#inp-fill").value = sel.fill || "#ffffff";
     $("#inp-stroke").value = sel.stroke || "#000000";
     $("#inp-stroke-style").value = sel.strokeStyle || "solid";
 
-    // ROOM block
     if (sel.type === "room") {
       $("#room-extra").style.display = "";
       $("#inp-room-name").value = sel.roomName ?? "";
@@ -416,7 +402,6 @@
       $("#room-extra").style.display = "none";
     }
 
-    // LABEL/TEXT block
     const needsLabel =
       sel.type === "label" ||
       sel.type === "wc" ||
@@ -443,22 +428,21 @@
   function renderJsonPreview() {
     const area = $("#save-json-area");
 
-    const buildingId = parseInt($("#inp-building-id")?.value ?? "", 10) || 0;
-    const floorVal = $("#inp-floor")?.value ?? "";
-    const floorNumber = floorVal === "" ? null : (parseInt(floorVal, 10) || 0);
+    const buildingId = parseInt($("#sel-building")?.value ?? "", 10) || null;
+    const floorRaw = $("#inp-floor-number")?.value ?? "";
+    const floorNumber = floorRaw === "" ? null : (parseInt(floorRaw, 10) || 0);
     const layoutName = $("#inp-layout-name")?.value || "";
 
-    // показываем именно тот объект, который уйдет на сервер
-    const previewPayload = {
-      name: layoutName || "Без названия",
+    const payload = {
       buildingId: buildingId,
       floorNumber: floorNumber,
+      name: layoutName || "Без названия",
       layoutJson: JSON.stringify({
         elements: state.elements
       })
     };
 
-    area.value = JSON.stringify(previewPayload, null, 2);
+    area.value = JSON.stringify(payload, null, 2);
   }
 
   // =========================
@@ -480,7 +464,6 @@
   function handlePaletteClick(ev) {
     const type = ev.currentTarget.getAttribute("data-create");
     if (!type) return;
-
     const el = createElement(type);
     state.elements.push(el);
     state.selectedId = el.id;
@@ -636,9 +619,9 @@
 
     $("#inp-label-text").addEventListener("input", onInspectorChange);
 
-    // изменения метаданных схемы тоже сразу обновляют превью
-    $("#inp-building-id")?.addEventListener("input", renderJsonPreview);
-    $("#inp-floor")?.addEventListener("input", renderJsonPreview);
+    // метаданные схемы → пересобираем payload превью
+    $("#sel-building")?.addEventListener("change", renderJsonPreview);
+    $("#inp-floor-number")?.addEventListener("input", renderJsonPreview);
     $("#inp-layout-name")?.addEventListener("input", renderJsonPreview);
   }
 
@@ -646,13 +629,11 @@
     const el = getSelected();
     if (!el) return;
 
-    // координаты
     const newX = parseFloat($("#inp-x").value);
     const newY = parseFloat($("#inp-y").value);
     if (!Number.isNaN(newX)) el.x = newX;
     if (!Number.isNaN(newY)) el.y = newY;
 
-    // размеры
     if (el.type === "round") {
       const d = parseFloat($("#inp-radius").value);
       if (!Number.isNaN(d) && d > 0) {
@@ -666,19 +647,16 @@
       if (!Number.isNaN(newH) && newH > 0) el.height = newH;
     }
 
-    // стили
     el.fill = $("#inp-fill").value || el.fill;
     el.stroke = $("#inp-stroke").value || el.stroke;
     el.strokeStyle = $("#inp-stroke-style").value || el.strokeStyle;
 
-    // Аудитория
     if (el.type === "room") {
       el.roomName = $("#inp-room-name").value;
       el.capacity = parseInt($("#inp-room-capacity").value, 10) || 0;
       el.classroomId = parseInt($("#inp-room-id").value, 10) || 0;
     }
 
-    // Подпись
     const needsLabel =
       el.type === "label" ||
       el.type === "wc" ||
@@ -700,12 +678,12 @@
   }
 
   // =========================
-  // SAVE PAYLOAD BUILD + POST
+  // SAVE
   // =========================
   function buildLayoutPayloadForServer() {
-    const buildingId = parseInt($("#inp-building-id")?.value ?? "", 10) || 0;
-    const floorVal = $("#inp-floor")?.value ?? "";
-    const floorNumber = floorVal === "" ? null : (parseInt(floorVal, 10) || 0);
+    const buildingId = parseInt($("#sel-building")?.value ?? "", 10) || null;
+    const floorRaw = $("#inp-floor-number")?.value ?? "";
+    const floorNumber = floorRaw === "" ? null : (parseInt(floorRaw, 10) || 0);
     const layoutName = $("#inp-layout-name")?.value || "Без названия";
 
     const layoutData = {
@@ -713,9 +691,9 @@
     };
 
     return {
-      name: layoutName,
       buildingId: buildingId,
       floorNumber: floorNumber,
+      name: layoutName,
       layoutJson: JSON.stringify(layoutData)
     };
   }
@@ -752,6 +730,23 @@
   }
 
   async function onSaveClicked() {
+    const buildingId = $("#sel-building").value.trim();
+    const floorStr   = $("#inp-floor-number").value.trim();
+    const nameStr    = $("#inp-layout-name").value.trim();
+
+    if (!buildingId) {
+      alert("Выбери здание / корпус.");
+      return;
+    }
+    if (!floorStr) {
+      alert("Укажи номер этажа.");
+      return;
+    }
+    if (!nameStr) {
+      alert("Введи название схемы / этажа.");
+      return;
+    }
+
     const reqBody = buildLayoutPayloadForServer();
 
     try {
@@ -764,7 +759,13 @@
       }
 
       const saved = await resp.json();
-      alert("Схема сохранена.\nID: " + saved.id + "\nИмя: " + saved.name);
+      alert(
+        "Схема сохранена.\n" +
+        "ID схемы: " + saved.id + "\n" +
+        "Корпус: " + (saved.buildingId ?? "—") + "\n" +
+        "Этаж: " + (saved.floorNumber ?? "—") + "\n" +
+        "Название: " + saved.name
+      );
       console.log("Saved layout:", saved);
     } catch (e) {
       console.error(e);
@@ -803,33 +804,59 @@
   });
 
   // =========================
-  // INIT
+  // INIT BUILDINGS LIST
   // =========================
-  function tryPrefillMetaFromQuery() {
-    // Удобно: можно открыть /app/layout-editor.html?buildingId=3&floor=2&name=Корпус%20А
-    const p = new URLSearchParams(location.search);
-    const b = p.get("buildingId");
-    const f = p.get("floor");
-    const n = p.get("name");
+  async function loadBuildingsToSelect() {
+    const sel = $("#sel-building");
+    if (!sel) return;
 
-    if (b && $("#inp-building-id")) $("#inp-building-id").value = b;
-    if (f && $("#inp-floor")) $("#inp-floor").value = f;
-    if (n && $("#inp-layout-name")) $("#inp-layout-name").value = decodeURIComponent(n);
+    // очистим, поставим плейсхолдер
+    sel.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "— выберите здание —";
+    sel.appendChild(opt0);
+
+    try {
+      const resp = await fetch("/api/buildings", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      if (!resp.ok) {
+        console.warn("Не удалось загрузить здания, HTTP " + resp.status);
+        return;
+      }
+      const list = await resp.json(); // [{id, name}, ...]
+      list.forEach(b => {
+        const opt = document.createElement("option");
+        opt.value = String(b.id);
+        opt.textContent = b.name || ("Здание #" + b.id);
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error("Ошибка загрузки корпусов:", e);
+    }
   }
 
-  function init() {
-    // палитра
+  // =========================
+  // INIT
+  // =========================
+  function initPaletteButtons() {
     $$(".le-tool-btn").forEach(btn => {
       btn.addEventListener("click", handlePaletteClick);
     });
+  }
 
+  async function init() {
+    initPaletteButtons();
     bindInspectorInputs();
     bindTopBarButtons();
 
-    tryPrefillMetaFromQuery();
+    await loadBuildingsToSelect();
 
     renderAll();
   }
 
   init();
+
 })();

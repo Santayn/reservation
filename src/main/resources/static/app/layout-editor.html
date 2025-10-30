@@ -3,16 +3,13 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Конструктор плана корпуса</title>
+    <title>Конструктор плана здания</title>
 
-    <link rel="stylesheet" href="/app/layout-editor.css">
+    <link rel="stylesheet" href="/app/layout-editor.css" />
 
-    <!--
-      Если потом включишь CSRF в Spring Security,
-      можно будет положить сюда мету с токеном, типа:
-      <meta name="_csrf" content="${_csrf.token}">
-      <meta name="_csrf_header" content="${_csrf.headerName}">
-      И в fetch() из layout-editor.js брать этот токен.
+    <!-- Если потом включишь CSRF в Spring Security:
+    <meta name="_csrf" content="${_csrf.token}">
+    <meta name="_csrf_header" content="${_csrf.headerName}">
     -->
 </head>
 <body>
@@ -21,39 +18,43 @@
     <!-- HEADER / TOP BAR -->
     <header class="le-topbar">
         <div class="le-topbar-left">
-            <h1 class="le-title">Конструктор плана корпуса</h1>
+            <h1 class="le-title">Конструктор плана здания</h1>
 
             <!-- Блок метаданных схемы -->
-            <div class="le-top-meta" style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+            <div class="le-top-meta"
+                 style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
 
-                <div class="le-field" style="min-width:120px;">
-                    <label class="le-label" for="inp-building-id">ID корпуса (buildingId)</label>
-                    <input id="inp-building-id"
-                           class="le-input"
-                           type="number"
-                           min="1"
-                           placeholder="1" />
+                <!-- ЗДАНИЕ / КОРПУС -->
+                <div class="le-field" style="min-width:200px;">
+                    <label class="le-label" for="sel-building">Здание / корпус</label>
+                    <select id="sel-building" class="le-input">
+                        <option value="">— выберите здание —</option>
+                    </select>
                 </div>
 
+                <!-- ЭТАЖ № -->
                 <div class="le-field" style="min-width:90px;">
-                    <label class="le-label" for="inp-floor">Этаж</label>
-                    <input id="inp-floor"
+                    <label class="le-label" for="inp-floor-number">Этаж №</label>
+                    <input id="inp-floor-number"
                            class="le-input"
                            type="number"
                            step="1"
                            min="0"
-                           placeholder="2" />
+                           placeholder="1" />
                 </div>
 
-                <div class="le-field" style="min-width:220px;">
-                    <label class="le-label" for="inp-layout-name">Название схемы</label>
+                <!-- НАЗВАНИЕ СХЕМЫ / ЭТАЖА -->
+                <div class="le-field" style="min-width:240px;">
+                    <label class="le-label" for="inp-layout-name">Название схемы / этажа</label>
                     <input id="inp-layout-name"
                            class="le-input"
                            type="text"
-                           placeholder="Корпус А — этаж 2" />
+                           placeholder="Например: 2 этаж, левое крыло" />
                 </div>
 
-                <div class="le-top-actions" style="display:flex; flex-wrap:wrap; gap:8px;">
+                <!-- actions -->
+                <div class="le-top-actions"
+                     style="display:flex; flex-wrap:wrap; gap:8px;">
                     <button id="btn-save" class="le-btn">Сохранить схему</button>
                     <button id="btn-delete" class="le-btn danger">Удалить выделенный</button>
                     <button id="btn-clear" class="le-btn warn">Очистить полотно</button>
@@ -140,7 +141,7 @@
                     </div>
                 </div>
 
-                <!-- диаметр для именно круглой зоны -->
+                <!-- диаметр для круглой зоны -->
                 <div class="le-field" id="circle-radius-row" style="display:none;">
                     <label class="le-label">Диаметр круглой зоны</label>
                     <input id="inp-radius" class="le-input" type="number" min="10">
@@ -167,7 +168,8 @@
                 </div>
 
                 <!-- Аудитория -->
-                <div id="room-extra" style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
+                <div id="room-extra"
+                     style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
                     <div class="le-field">
                         <label class="le-label">Название аудитории</label>
                         <input id="inp-room-name" class="le-input" type="text" placeholder="Ауд. 101">
@@ -185,7 +187,8 @@
                 </div>
 
                 <!-- Подпись -->
-                <div id="label-extra" style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
+                <div id="label-extra"
+                     style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
                     <div class="le-field">
                         <label class="le-label">Текст элемента / подпись</label>
                         <input id="inp-label-text" class="le-input" type="text"

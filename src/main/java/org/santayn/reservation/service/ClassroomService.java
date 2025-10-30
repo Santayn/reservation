@@ -1,4 +1,3 @@
-// src/main/java/org/santayn/reservation/service/ClassroomService.java
 package org.santayn.reservation.service;
 
 import lombok.RequiredArgsConstructor;
@@ -8,8 +7,16 @@ import org.santayn.reservation.models.classroom.ClassroomFaculty;
 import org.santayn.reservation.models.classroom.ClassroomSpecialization;
 import org.santayn.reservation.models.faculty.Faculty;
 import org.santayn.reservation.models.specialization.Specialization;
-import org.santayn.reservation.repositories.*;
-import org.santayn.reservation.web.dto.classroom.*;
+import org.santayn.reservation.repositories.BuildingRepository;
+import org.santayn.reservation.repositories.ClassroomFacultyRepository;
+import org.santayn.reservation.repositories.ClassroomRepository;
+import org.santayn.reservation.repositories.ClassroomSpecializationRepository;
+import org.santayn.reservation.repositories.FacultyRepository;
+import org.santayn.reservation.repositories.SpecializationRepository;
+import org.santayn.reservation.web.dto.classroom.ClassroomCreateRequest;
+import org.santayn.reservation.web.dto.classroom.ClassroomDto;
+import org.santayn.reservation.web.dto.classroom.ClassroomEnsureRequest;
+import org.santayn.reservation.web.dto.classroom.ClassroomUpdateRequest;
 import org.santayn.reservation.web.exception.NotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Логика работы с аудиториями.
+ *
+ * ВАЖНО: используем твою модель Classroom без поля этажа.
+ * Привязка к Building остаётся (как и была).
+ */
 @Service
 @RequiredArgsConstructor
 public class ClassroomService {
@@ -27,6 +40,8 @@ public class ClassroomService {
     private final SpecializationRepository specializationRepo;
     private final ClassroomFacultyRepository classroomFacultyRepo;
     private final ClassroomSpecializationRepository classroomSpecRepo;
+
+    // ---------- CRUD ----------
 
     @Transactional
     public ClassroomDto create(ClassroomCreateRequest r) {
@@ -42,8 +57,10 @@ public class ClassroomService {
         }
 
         c = classroomRepo.save(c);
+
         syncFaculties(c.getId(), safeIds(r.facultyIds()));
         syncSpecializations(c.getId(), safeIds(r.specializationIds()));
+
         return toDto(c);
     }
 
@@ -75,8 +92,10 @@ public class ClassroomService {
         }
 
         c = classroomRepo.save(c);
+
         syncFaculties(id, safeIds(r.facultyIds()));
         syncSpecializations(id, safeIds(r.specializationIds()));
+
         return toDto(c);
     }
 
@@ -86,32 +105,28 @@ public class ClassroomService {
         classroomRepo.deleteById(id);
     }
 
-    /** Для фронта: найти по name, если нет — создать (с capacity). */
-    // src/main/java/org/santayn/reservation/service/ClassroomService.java
+    // ---------- ensureByName ----------
+
+    /**
+     * Найти аудиторию по имени (или токену), при отсутствии — создать.
+     * building здесь не трогаем, как и раньше.
+     */
     @Transactional
     public ClassroomDto ensureByName(ClassroomEnsureRequest req) {
         String key = Optional.ofNullable(req.name()).orElse("").trim();
-        if (key.isEmpty()) {
-            throw new NotFoundException("Classroom not found: <empty>");
-        }
+        if (key.isEmpty()) throw new NotFoundException("Classroom not found: <empty>");
 
-        // 1) пробуем точное имя
         Optional<Classroom> found = classroomRepo.findByName(key);
-
-        // 2) если не найдено — пробуем по короткому коду/вхождению
         if (found.isEmpty()) {
-            // вытаскиваем цифры, чтобы "Ауд. 102" и "102" совпали
             String digits = key.replaceAll("\\D+", "");
             if (!digits.isBlank()) {
                 found = classroomRepo.findFirstByNameContainingIgnoreCase(digits);
             } else {
-                // если цифр нет, ищем хотя бы по вхождению исходной строки
                 found = classroomRepo.findFirstByNameContainingIgnoreCase(key);
             }
         }
 
         Classroom c = found.orElseGet(() -> {
-            // если пришёл чистый код — создаём с префиксом "Ауд. "
             String nameToCreate = key.matches("\\d+") ? "Ауд. " + key : key;
             return classroomRepo.save(
                     Classroom.builder()
@@ -121,7 +136,6 @@ public class ClassroomService {
             );
         });
 
-        // при желании обновляем capacity у уже существующего
         if (req.capacity() != null && !Objects.equals(c.getCapacity(), req.capacity())) {
             c.setCapacity(req.capacity());
             c = classroomRepo.save(c);
@@ -130,8 +144,44 @@ public class ClassroomService {
         return toDto(c);
     }
 
+    // ---------- upsert для сохранения схемы ----------
 
-    // ---------- helpers.js ----------
+    /**
+     * Вызывается при СОХРАНЕНИИ СХЕМЫ: создаёт/обновляет аудитории из layoutJson.
+     * Никаких ссылок на этаж не пишем (в модели их нет). Здание тоже не трогаем.
+     */
+    @Transactional
+    public void upsertRoomsForLayout(Long layoutId, List<RoomCandidate> rooms) {
+        if (rooms == null || rooms.isEmpty()) return;
+
+        for (RoomCandidate rc : rooms) {
+            String roomName = Optional.ofNullable(rc.name()).orElse("").trim();
+            if (roomName.isEmpty()) continue;
+            Integer wantedCap = Optional.ofNullable(rc.capacity()).orElse(0);
+
+            Optional<Classroom> found = classroomRepo.findByName(roomName);
+
+            if (found.isEmpty()) {
+                classroomRepo.save(
+                        Classroom.builder()
+                                .name(roomName)
+                                .capacity(wantedCap)
+                                .build()
+                );
+            } else {
+                Classroom existing = found.get();
+                if (!Objects.equals(existing.getCapacity(), wantedCap)) {
+                    existing.setCapacity(wantedCap);
+                    classroomRepo.save(existing);
+                }
+            }
+        }
+    }
+
+    // ---------- вспомогательные типы/методы ----------
+
+    /** Упрощённая запись аудитории из layoutJson. */
+    public record RoomCandidate(String name, Integer capacity) {}
 
     private ClassroomDto toDto(Classroom c) {
         Long buildingId = c.getBuilding() != null ? c.getBuilding().getId() : null;
@@ -143,14 +193,18 @@ public class ClassroomService {
                 .stream().map(cs -> cs.getSpecialization().getId()).toList();
 
         return new ClassroomDto(
-                c.getId(), c.getName(),
+                c.getId(),
+                c.getName(),
                 Optional.ofNullable(c.getCapacity()).orElse(0),
-                buildingId, facultyIds, specIds
+                buildingId,
+                facultyIds,
+                specIds
         );
     }
 
     private List<Long> safeIds(List<Long> ids) {
-        return ids == null ? Collections.emptyList() : ids.stream().filter(Objects::nonNull).distinct().toList();
+        return ids == null ? Collections.emptyList()
+                : ids.stream().filter(Objects::nonNull).distinct().toList();
     }
 
     private void syncFaculties(Long classroomId, List<Long> expected) {
