@@ -13,20 +13,32 @@
         <span id="current-layout-name">—</span>
     </h1>
     <p class="lead">
-        Выберите схему, этаж и слот. Кликните по аудитории, чтобы посмотреть доступность или создать бронь.
+        Выберите корпус, затем этаж (схему), дату и слот. Кликните по аудитории, чтобы посмотреть доступность или создать бронь.
     </p>
 
     <div class="toolbar" role="toolbar" aria-label="Фильтры">
 
-        <!-- СХЕМА (без корпуса) -->
-        <div class="group" role="group" aria-label="Выбор схемы">
-            <strong>Схема:</strong>
+        <!-- КОРПУС -->
+        <div class="group" role="group" aria-label="Выбор корпуса">
+            <strong>Здание / корпус:</strong>
+            <select id="building-select"
+                    class="inline-input"
+                    style="min-width:200px"
+                    aria-label="Здание / корпус">
+                <option value="">— выберите здание —</option>
+                <!-- сюда из JS загрузятся корпуса /api/buildings -->
+            </select>
+        </div>
+
+        <!-- ЭТАЖ (схема для корпуса) -->
+        <div class="group" role="group" aria-label="Выбор схемы этажа">
+            <strong>Этаж (схема):</strong>
             <select id="layout-select"
                     class="inline-input"
                     style="min-width:220px"
-                    aria-label="Схема этажа/плана здания">
-                <!-- сюда из JS загрузятся схемы -->
-                <!-- <option value="55" selected>Этаж 2 (после ремонта)</option> -->
+                    aria-label="Этаж (схема)">
+                <option value="">— нет этажей —</option>
+                <!-- сюда из JS загрузятся схемы этого корпуса /api/layouts/by-building/{id} -->
             </select>
         </div>
 
@@ -34,14 +46,6 @@
         <div class="group">
             <strong>Дата:</strong>
             <input id="date-input" type="date" aria-label="Дата бронирования" />
-        </div>
-
-        <!-- ЭТАЖ -->
-        <div class="group floor-switch" role="group" aria-label="Выбор этажа">
-            <strong>Этаж:</strong>
-            <button type="button" data-floor="1" class="active" aria-pressed="true">1</button>
-            <button type="button" data-floor="2" aria-pressed="false">2</button>
-            <button type="button" data-floor="3" aria-pressed="false">3</button>
         </div>
 
         <!-- СЛОТ -->
@@ -83,35 +87,11 @@
 
             <label style="margin-left:10px;"><strong>TZ:</strong></label>
             <select id="sch-tz" aria-label="Тайм-зона" style="min-width:240px">
-                <option value="Pacific/Midway">(UTC-11) Pacific/Midway</option>
-                <option value="Pacific/Honolulu">(UTC-10) Pacific/Honolulu</option>
-                <option value="America/Anchorage">(UTC-09) America/Anchorage</option>
-                <option value="America/Los_Angeles">(UTC-08) America/Los_Angeles</option>
-                <option value="America/Denver">(UTC-07) America/Denver</option>
-                <option value="America/Chicago">(UTC-06) America/Chicago</option>
-                <option value="America/New_York">(UTC-05) America/New_York</option>
-                <option value="America/Halifax">(UTC-04) America/Halifax</option>
-                <option value="America/Argentina/Buenos_Aires">(UTC-03) America/Argentina/Buenos_Aires</option>
-                <option value="Atlantic/South_Georgia">(UTC-02) Atlantic/South_Georgia</option>
-                <option value="Atlantic/Azores">(UTC-01) Atlantic/Azores</option>
-                <option value="UTC">(UTC±00) UTC</option>
-                <option value="Europe/London">(UTC±00) Europe/London</option>
-                <option value="Europe/Berlin">(UTC+01) Europe/Berlin</option>
-                <option value="Europe/Athens">(UTC+02) Europe/Athens</option>
-                <option value="Europe/Moscow" selected>(UTC+03) Europe/Moscow</option>
-                <option value="Asia/Dubai">(UTC+04) Asia/Dubai</option>
-                <option value="Asia/Karachi">(UTC+05) Asia/Karachi</option>
-                <option value="Asia/Dhaka">(UTC+06) Asia/Dhaka</option>
-                <option value="Asia/Bangkok">(UTC+07) Asia/Bangkok</option>
-                <option value="Asia/Shanghai">(UTC+08) Asia/Shanghai</option>
-                <option value="Asia/Tokyo">(UTC+09) Asia/Tokyo</option>
-                <option value="Australia/Sydney">(UTC+10) Australia/Sydney</option>
-                <option value="Pacific/Noumea">(UTC+11) Pacific/Noumea</option>
-                <option value="Pacific/Auckland">(UTC+12) Pacific/Auckland</option>
+                <!-- наполняется JS -->
             </select>
         </div>
 
-        <!-- Фильтр факультет/специализация -->
+        <!-- Фильтр факультет / специализация -->
         <div class="group filter-wrap">
             <button id="filter-btn" type="button">Фильтр</button>
             <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
@@ -162,126 +142,9 @@
         <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
     </section>
 
-    <!-- План здания -->
-    <div id="building-plan" class="building" aria-label="План этажей">
-        <!--
-            Это дефолтная статика. JS (plan-page.js) может заменить innerHTML у #building-plan
-            на сгенерированную структуру из выбранной схемы.
-        -->
-        <div class="wings">
-
-            <!-- Левый корпус -->
-            <section class="wing" aria-label="Левый корпус">
-                <h3>Левый корпус</h3>
-                <div class="floor active" data-floor="1">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 101" data-capacity="30">Ауд. 101 (30)</button>
-                        <button type="button" class="room" data-room="Ауд. 102" data-capacity="25">Ауд. 102 (25)</button>
-                        <button type="button" class="room" data-room="Ауд. 103" data-capacity="40">Ауд. 103 (40)</button>
-                        <button type="button" class="room" data-room="Ауд. 104" data-capacity="28">Ауд. 104 (28)</button>
-                        <button type="button" class="room" data-room="Ауд. 105" data-capacity="35">Ауд. 105 (35)</button>
-                        <button type="button" class="room" data-room="Ауд. 106" data-capacity="22">Ауд. 106 (22)</button>
-                        <button type="button" class="room" data-room="Ауд. 107" data-capacity="32">Ауд. 107 (32)</button>
-                        <button type="button" class="room" data-room="Ауд. 108" data-capacity="27">Ауд. 108 (27)</button>
-                        <button type="button" class="room" data-room="Ауд. 109" data-capacity="40">Ауд. 109 (40)</button>
-                        <button type="button" class="room" data-room="Ауд. 110" data-capacity="36">Ауд. 110 (36)</button>
-                    </div>
-                </div>
-                <div class="floor" data-floor="2">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 201" data-capacity="34">Ауд. 201 (34)</button>
-                        <button type="button" class="room" data-room="Ауд. 202" data-capacity="26">Ауд. 202 (26)</button>
-                        <button type="button" class="room" data-room="Ауд. 203" data-capacity="38">Ауд. 203 (38)</button>
-                        <button type="button" class="room" data-room="Ауд. 204" data-capacity="25">Ауд. 204 (25)</button>
-                        <button type="button" class="room" data-room="Ауд. 205" data-capacity="42">Ауд. 205 (42)</button>
-                        <button type="button" class="room" data-room="Ауд. 206" data-capacity="29">Ауд. 206 (29)</button>
-                        <button type="button" class="room" data-room="Ауд. 207" data-capacity="31">Ауд. 207 (31)</button>
-                        <button type="button" class="room" data-room="Ауд. 208" data-capacity="24">Ауд. 208 (24)</button>
-                        <button type="button" class="room" data-room="Ауд. 209" data-capacity="39">Ауд. 209 (39)</button>
-                        <button type="button" class="room" data-room="Ауд. 210" data-capacity="30">Ауд. 210 (30)</button>
-                    </div>
-                </div>
-                <div class="floor" data-floor="3">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 301" data-capacity="28">Ауд. 301 (28)</button>
-                        <button type="button" class="room" data-room="Ауд. 302" data-capacity="33">Ауд. 302 (33)</button>
-                        <button type="button" class="room" data-room="Ауд. 303" data-capacity="40">Ауд. 303 (40)</button>
-                        <button type="button" class="room" data-room="Ауд. 304" data-capacity="23">Ауд. 304 (23)</button>
-                        <button type="button" class="room" data-room="Ауд. 305" data-capacity="35">Ауд. 305 (35)</button>
-                        <button type="button" class="room" data-room="Ауд. 306" data-capacity="21">Ауд. 306 (21)</button>
-                        <button type="button" class="room" data-room="Ауд. 307" data-capacity="27">Ауд. 307 (27)</button>
-                        <button type="button" class="room" data-room="Ауд. 308" data-capacity="37">Ауд. 308 (37)</button>
-                        <button type="button" class="room" data-room="Ауд. 309" data-capacity="41">Ауд. 309 (41)</button>
-                        <button type="button" class="room" data-room="Ауд. 310" data-capacity="30">Ауд. 310 (30)</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Центр -->
-            <section class="wing center" aria-label="Центральная часть">
-                <h3>Центр</h3>
-                <div class="floor active" data-floor="1">
-                    <div class="room foyer" aria-disabled="true" data-room="Фойе" data-capacity="0">Фойе</div>
-                </div>
-                <div class="floor" data-floor="2">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
-                    </div>
-                </div>
-                <div class="floor" data-floor="3">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Лекционная аудитория" data-capacity="120">Лекционная аудитория (120)</button>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Правый корпус -->
-            <section class="wing" aria-label="Правый корпус">
-                <h3>Правый корпус</h3>
-                <div class="floor active" data-floor="1">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 111" data-capacity="28">Ауд. 111 (28)</button>
-                        <button type="button" class="room" data-room="Ауд. 112" data-capacity="26">Ауд. 112 (26)</button>
-                        <button type="button" class="room" data-room="Ауд. 113" data-capacity="32">Ауд. 113 (32)</button>
-                        <button type="button" class="room" data-room="Ауд. 114" data-capacity="24">Ауд. 114 (24)</button>
-                        <button type="button" class="room" data-room="Ауд. 115" data-capacity="39">Ауд. 115 (39)</button>
-                        <button type="button" class="room" data-room="Ауд. 116" data-capacity="21">Ауд. 116 (21)</button>
-                        <button type="button" class="room" data-room="Ауд. 117" data-capacity="33">Ауд. 117 (33)</button>
-                        <button type="button" class="room" data-room="Ауд. 118" data-capacity="27">Ауд. 118 (27)</button>
-                        <button type="button" class="room" data-room="Ауд. 119" data-capacity="42">Ауд. 119 (42)</button>
-                        <button type="button" class="room" data-room="Ауд. 120" data-capacity="34">Ауд. 120 (34)</button>
-                    </div>
-                </div>
-                <div class="floor" data-floor="2">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 211" data-capacity="29">Ауд. 211 (29)</button>
-                        <button type="button" class="room" data-room="Ауд. 212" data-capacity="31">Ауд. 212 (31)</button>
-                        <button type="button" class="room" data-room="Ауд. 213" data-capacity="36">Ауд. 213 (36)</button>
-                        <button type="button" class="room" data-room="Ауд. 214" data-capacity="23">Ауд. 214 (23)</button>
-                        <button type="button" class="room" data-room="Ауд. 215" data-capacity="41">Ауд. 215 (41)</button>
-                        <button type="button" class="room" data-room="Ауд. 216" data-capacity="22">Ауд. 216 (22)</button>
-                        <button type="button" class="room" data-room="Ауд. 217" data-capacity="34">Ауд. 217 (34)</button>
-                        <button type="button" class="room" data-room="Ауд. 218" data-capacity="28">Ауд. 218 (28)</button>
-                        <button type="button" class="room" data-room="Ауд. 219" data-capacity="37">Ауд. 219 (37)</button>
-                        <button type="button" class="room" data-room="Ауд. 220" data-capacity="30">Ауд. 220 (30)</button>
-                    </div>
-                </div>
-                <div class="floor" data-floor="3">
-                    <div class="rooms">
-                        <button type="button" class="room" data-room="Ауд. 311" data-capacity="25">Ауд. 311 (25)</button>
-                        <button type="button" class="room" data-room="Ауд. 312" data-capacity="33">Ауд. 312 (33)</button>
-                        <button type="button" class="room" data-room="Ауд. 313" data-capacity="38">Ауд. 313 (38)</button>
-                        <button type="button" class="room" data-room="Ауд. 314" data-capacity="23">Ауд. 314 (23)</button>
-                        <button type="button" class="room" data-room="Ауд. 315" data-capacity="35">Ауд. 315 (35)</button>
-                        <button type="button" class="room" data-room="Ауд. 316" data-capacity="21">Ауд. 316 (21)</button>
-                        <button type="button" class="room" data-room="Ауд. 317" data-capacity="30">Ауд. 317 (30)</button>
-                        <button type="button" class="room" data-room="Ауд. 318" data-capacity="29">Ауд. 318 (29)</button>
-                        <button type="button" class="room" data-room="Ауд. 319" data-capacity="40">Ауд. 319 (40)</button>
-                        <button type="button" class="room" data-room="Ауд. 320" data-capacity="32">Ауд. 320 (32)</button>
-                    </div>
-                </div>
-            </section>
-        </div>
+    <!-- Контейнер сгенерированной схемы здания -->
+    <div id="building-plan" class="building" aria-label="План этажа">
+        <!-- JS полностью заменит содержимое на layout-stage -->
     </div>
 
     <div class="entrance" aria-label="Главный вход">Вход</div>

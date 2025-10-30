@@ -1,6 +1,9 @@
 // plan-page.js
-// Слоты/фильтры/подсветка — как было.
-// Рендер схемы: из layoutJson по абсолютным координатам. Корпусы убраны.
+// Логика:
+// 1. грузим корпуса (/api/buildings) -> building-select
+// 2. при выборе корпуса грузим этажи этого корпуса (/api/layouts/by-building/{buildingId}) -> layout-select
+// 3. при выборе layout грузим её JSON (/api/layouts/{layoutId}) и рисуем абсолютными координатами
+// остальная логика бронирования / подсветок остаётся
 
 (function () {
   "use strict";
@@ -65,26 +68,30 @@
   // ===== Кэш слотов =====
   const slotsMap = new Map(); // id -> {id,label}
 
-  // ===== STATE: только схемы (без корпусов) =====
+  // ===== STATE =====
+  // buildings: [{id,name}]
+  // layoutsByBuilding[buildingId] = [{id,name,floorNumber,layoutJson?}, ...]
+  // currentBuildingId
+  // currentLayoutId
+  // currentLayoutData
   const LayoutState = {
-    layouts: [],              // [{id,name,floorNumber,layoutJson?}]
+    buildings: [],
+    layoutsByBuilding: new Map(),
+    currentBuildingId: null,
     currentLayoutId: null,
-    currentLayoutData: null   // {id,name,floorNumber,layoutJson}
+    currentLayoutData: null
   };
 
   // =========================
   // Основной сценарий
   // =========================
   ready(async () => {
-    await initLayoutsFlow();
+    await initBuildingsAndLayoutsFlow();
 
     window.SchedulePanel?.init?.();
-    initFloorSwitch();
     await initSlots();
     initDateField();
     initTimeZones();
-    initRooms(); // навесим клики, если в статике были комнаты (после render заменим ещё раз)
-
     await Promise.all([loadGroups(), loadRoomsMeta()]);
     initFilterMenu();
 
@@ -93,39 +100,214 @@
   });
 
   // =========================
-  // Схемы
+  // Buildings + Layouts flow
   // =========================
-  async function initLayoutsFlow() {
-    await loadAllLayouts();
 
-    if (LayoutState.layouts.length > 0 && LayoutState.currentLayoutId == null) {
-      LayoutState.currentLayoutId = LayoutState.layouts[0].id;
+  async function initBuildingsAndLayoutsFlow() {
+    // 1. подгружаем корпуса
+    await loadBuildings();
+    fillBuildingSelect();
+
+    // 2. повесим change на корпус
+    bindBuildingChangeHandler();
+
+    // если есть хотя бы один корпус — выберем первый автоматически
+    if (LayoutState.buildings.length > 0) {
+      LayoutState.currentBuildingId = LayoutState.buildings[0].id;
+      $("#building-select").value = String(LayoutState.currentBuildingId);
+      await loadLayoutsForBuilding(LayoutState.currentBuildingId);
+      fillLayoutSelect();
+    } else {
+      // нет корпусов => очистим layout-select
+      clearLayoutSelect("— нет этажей —");
     }
 
-    updateLayoutSelect();
-    await loadCurrentLayoutFull();
-    applyHeaderInfo();
-    renderBuildingPlanFromLayout();
+    // 3. change на layout
     bindLayoutChangeHandler();
+
+    // 4. если есть схемы у выбранного корпуса — выберем первую
+    const curList = LayoutState.layoutsByBuilding.get(LayoutState.currentBuildingId) || [];
+    if (curList.length > 0) {
+        LayoutState.currentLayoutId = curList[0].id;
+        $("#layout-select").value = String(LayoutState.currentLayoutId);
+        await loadCurrentLayoutFull();
+        applyHeaderInfo();
+        renderBuildingPlanFromLayout();
+    } else {
+        LayoutState.currentLayoutId = null;
+        LayoutState.currentLayoutData = null;
+        applyHeaderInfo();
+        renderBuildingPlanFromLayout(); // будет пусто
+    }
   }
 
-  async function loadAllLayouts() {
+  async function loadBuildings() {
+    // GET /api/buildings -> [{id,name}, ...]
     try {
-      const r = await fetch("/api/layouts", { credentials:"include" });
-      if (!r.ok) { LayoutState.layouts = []; return; }
+      const r = await fetch("/api/buildings", { credentials:"include" });
+      if (!r.ok) { LayoutState.buildings = []; return; }
       const data = await r.json();
-      LayoutState.layouts = Array.isArray(data) ? data : (Array.isArray(data.content) ? data.content : []);
-    } catch(e) {
-      console.error("Ошибка загрузки списка схем", e);
-      LayoutState.layouts = [];
+      // контроллер нам уже возвращает [{id, name}, ...]
+      LayoutState.buildings = Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.error("Ошибка загрузки корпусов", e);
+      LayoutState.buildings = [];
     }
+  }
+
+  function fillBuildingSelect() {
+    const sel = $("#building-select");
+    if (!sel) return;
+    sel.innerHTML = "";
+
+    // плейсхолдер
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "— выберите здание —";
+    sel.appendChild(ph);
+
+    LayoutState.buildings.forEach(b => {
+      const opt = document.createElement("option");
+      opt.value = String(b.id);
+      opt.textContent = b.name || ("Корпус " + b.id);
+      sel.appendChild(opt);
+    });
+
+    sel.disabled = LayoutState.buildings.length === 0;
+  }
+
+  function bindBuildingChangeHandler() {
+    const sel = $("#building-select");
+    if (!sel) return;
+    sel.addEventListener("change", async (ev) => {
+      const raw = ev.target.value;
+      const bId = raw === "" ? null : parseInt(raw,10);
+
+      LayoutState.currentBuildingId = (bId==null || Number.isNaN(bId)) ? null : bId;
+
+      if (LayoutState.currentBuildingId == null) {
+        // сбрасываем этажи
+        clearLayoutSelect("— выберите корпус —");
+        LayoutState.currentLayoutId = null;
+        LayoutState.currentLayoutData = null;
+        applyHeaderInfo();
+        renderBuildingPlanFromLayout();
+        return;
+      }
+
+      // загружаем этажи для выбранного корпуса
+      await loadLayoutsForBuilding(LayoutState.currentBuildingId);
+      fillLayoutSelect();
+
+      // выбираем первый этаж автоматически
+      const list = LayoutState.layoutsByBuilding.get(LayoutState.currentBuildingId) || [];
+      if (list.length > 0) {
+        LayoutState.currentLayoutId = list[0].id;
+        $("#layout-select").value = String(LayoutState.currentLayoutId);
+        await loadCurrentLayoutFull();
+      } else {
+        LayoutState.currentLayoutId = null;
+        LayoutState.currentLayoutData = null;
+      }
+
+      applyHeaderInfo();
+      renderBuildingPlanFromLayout();
+    });
+  }
+
+  async function loadLayoutsForBuilding(buildingId) {
+    if (!Number.isFinite(buildingId)) {
+      LayoutState.layoutsByBuilding.set(buildingId, []);
+      return;
+    }
+    try {
+      // GET /api/layouts/by-building/{buildingId}
+      const r = await fetch(`/api/layouts/by-building/${buildingId}`, { credentials:"include" });
+      if (!r.ok) {
+        LayoutState.layoutsByBuilding.set(buildingId, []);
+        return;
+      }
+      const data = await r.json();
+      // бэк возвращает [{id, name, buildingId, floorNumber, layoutJson (может быть)}...]
+      const list = Array.isArray(data) ? data : [];
+      LayoutState.layoutsByBuilding.set(buildingId, list);
+    } catch (e) {
+      console.error("Ошибка загрузки этажей корпуса", e);
+      LayoutState.layoutsByBuilding.set(buildingId, []);
+    }
+  }
+
+  function clearLayoutSelect(placeholderText) {
+    const sel = $("#layout-select");
+    if (!sel) return;
+    sel.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = placeholderText || "— нет этажей —";
+    sel.appendChild(opt);
+    sel.disabled = true;
+  }
+
+  function fillLayoutSelect() {
+    const sel = $("#layout-select");
+    if (!sel) return;
+
+    const bId = LayoutState.currentBuildingId;
+    const list = LayoutState.layoutsByBuilding.get(bId) || [];
+
+    sel.innerHTML = "";
+
+    if (list.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "— нет этажей —";
+      sel.appendChild(opt);
+      sel.disabled = true;
+      return;
+    }
+
+    list.forEach(l => {
+      const opt = document.createElement("option");
+      opt.value = String(l.id);
+
+      // подпись в выпадающем списке
+      // пример: "этаж 2 — Левое крыло"
+      const floorPart = (l.floorNumber != null) ? `этаж ${l.floorNumber}` : "этаж ?";
+      const namePart  = l.name ? ` — ${l.name}` : "";
+      opt.textContent = floorPart + namePart;
+
+      sel.appendChild(opt);
+    });
+
+    sel.disabled = false;
+  }
+
+  function bindLayoutChangeHandler() {
+    const sel = $("#layout-select");
+    if (!sel) return;
+    sel.addEventListener("change", async (ev) => {
+      const raw = ev.target.value;
+      const newId = raw === "" ? null : parseInt(raw,10);
+      LayoutState.currentLayoutId = (newId==null || Number.isNaN(newId)) ? null : newId;
+
+      await loadCurrentLayoutFull();
+      applyHeaderInfo();
+      renderBuildingPlanFromLayout();
+    });
   }
 
   async function loadCurrentLayoutFull() {
-    if (!LayoutState.currentLayoutId) { LayoutState.currentLayoutData = null; return; }
+    const layoutId = LayoutState.currentLayoutId;
+    if (!layoutId) {
+      LayoutState.currentLayoutData = null;
+      return;
+    }
     try {
-      const r = await fetch(`/api/layouts/${LayoutState.currentLayoutId}`, { credentials:"include" });
-      if (!r.ok) { LayoutState.currentLayoutData = null; return; }
+      const r = await fetch(`/api/layouts/${layoutId}`, { credentials:"include" });
+      if (!r.ok) {
+        LayoutState.currentLayoutData = null;
+        return;
+      }
       LayoutState.currentLayoutData = await r.json();
     } catch(e) {
       console.error("Ошибка загрузки выбранной схемы", e);
@@ -133,78 +315,38 @@
     }
   }
 
-  function updateLayoutSelect() {
-    const sel = $("#layout-select");
-    if (!sel) return;
-    sel.innerHTML = "";
-
-    if (LayoutState.layouts.length === 0) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "нет схем";
-      sel.appendChild(opt);
-      sel.disabled = true;
-      return;
-    }
-
-    // пункт «Дефолтная схема» (id пустой)
-    const def = document.createElement("option");
-    def.value = "";
-    def.textContent = "Дефолтная схема";
-    def.selected = LayoutState.currentLayoutId == null;
-    sel.appendChild(def);
-
-    LayoutState.layouts.forEach(l => {
-      const opt = document.createElement("option");
-      opt.value = String(l.id);
-      const floorLabel = (l.floorNumber ?? null) !== null ? `этаж ${l.floorNumber} · ` : "";
-      opt.textContent = l.name ? (floorLabel + l.name) : (`схема ${l.id}`);
-      if (l.id === LayoutState.currentLayoutId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-
-    sel.disabled = false;
-  }
-
   function applyHeaderInfo() {
     const lNameSpan = $("#current-layout-name");
-    const lObj = LayoutState.layouts.find(l => l.id === LayoutState.currentLayoutId);
+    const layoutData = LayoutState.currentLayoutData;
 
     if (lNameSpan) {
-      if (!LayoutState.currentLayoutId) {
-        lNameSpan.textContent = "Дефолтная схема";
-      } else if (lObj) {
-        const floorLabel = (lObj.floorNumber ?? null) !== null ? `этаж ${lObj.floorNumber} · ` : "";
-        lNameSpan.textContent = lObj.name ? (floorLabel + lObj.name) : (`схема ${lObj.id}`);
-      } else {
+      if (!layoutData) {
         lNameSpan.textContent = "—";
+      } else {
+        const floorPart = (layoutData.floorNumber != null)
+            ? `этаж ${layoutData.floorNumber} · `
+            : "";
+        lNameSpan.textContent = layoutData.name
+            ? (floorPart + layoutData.name)
+            : (`схема ${layoutData.id}`);
       }
     }
 
+    // формируем ссылку "Конструктор плана"
     const editBtn = $("#to-editor-btn");
     if (editBtn) {
-      const floorParam = lObj && lObj.floorNumber != null ? lObj.floorNumber : "";
-      const layoutNameParam = lObj && lObj.name ? encodeURIComponent(lObj.name) : "";
+      const floorParam = layoutData && layoutData.floorNumber != null
+            ? layoutData.floorNumber
+            : "";
+      const layoutNameParam = layoutData && layoutData.name
+            ? encodeURIComponent(layoutData.name)
+            : "";
       editBtn.href =
         "/app/layout-editor.html"
         + "?floor=" + floorParam
         + "&name=" + layoutNameParam
-        + "&layoutId=" + (LayoutState.currentLayoutId || "");
+        + "&layoutId=" + (layoutData ? layoutData.id : "");
     }
-  }
-
-  function bindLayoutChangeHandler() {
-    const layoutSel = $("#layout-select");
-    if (!layoutSel) return;
-    layoutSel.addEventListener("change", async (ev) => {
-      const raw = ev.target.value;
-      const newId = raw === "" ? null : parseInt(raw, 10);
-      LayoutState.currentLayoutId = (newId==null || Number.isNaN(newId)) ? null : newId;
-
-      await loadCurrentLayoutFull();
-      applyHeaderInfo();
-      renderBuildingPlanFromLayout();
-    });
   }
 
   // =========================
@@ -214,31 +356,32 @@
     const container = $("#building-plan");
     if (!container) return;
 
-    // Если «Дефолтная схема» — оставляем статическую разметку как есть.
-    if (!LayoutState.currentLayoutId) {
+    const data = LayoutState.currentLayoutData;
+    if (!data || !data.layoutJson) {
+      // если нет выбранной схемы или нет layoutJson — просто очистим контейнер
+      container.innerHTML = "";
       return;
     }
-
-    const data = LayoutState.currentLayoutData;
-    if (!data || !data.layoutJson) return;
 
     let parsed;
     try {
       parsed = JSON.parse(data.layoutJson);
     } catch (e) {
       console.error("layoutJson не парсится:", e, data.layoutJson);
+      container.innerHTML = "";
       return;
     }
 
     const elements = Array.isArray(parsed.elements) ? parsed.elements : [];
-    // посчитаем bounding box
+
+    // bounding box
     const bbox = computeBBox(elements);
-    const stagePadding = 40; // немного воздуха вокруг
+    const stagePadding = 40;
     const stageW = Math.max(600, Math.ceil(bbox.maxX + stagePadding));
     const stageH = Math.max(400, Math.ceil(bbox.maxY + stagePadding));
     const floorNum = data.floorNumber ?? "—";
 
-    // Сцена
+    // сцена
     const stage = document.createElement("div");
     stage.className = "layout-stage";
     stage.setAttribute("aria-label", `Этаж ${floorNum}`);
@@ -247,11 +390,11 @@
     stage.style.height = stageH + "px";
     stage.style.border = "2px solid #222";
     stage.style.borderRadius = "10px";
-    stage.style.background = "#fffdf4";        // лёгкий фон, чтобы было видно
+    stage.style.background = "#fffdf4";
     stage.style.margin = "0 auto";
     stage.style.overflow = "hidden";
 
-    // Заголовок внутри сцены
+    // заголовок на сцене
     const title = document.createElement("div");
     title.textContent = `Этаж ${floorNum}`;
     title.style.position = "absolute";
@@ -261,17 +404,16 @@
     title.style.userSelect = "none";
     stage.appendChild(title);
 
-    // Элементы
+    // элементы схемы (комнаты/стены/и т.д.)
     for (const el of elements) {
       const node = createNodeForElement(el);
       if (node) stage.appendChild(node);
     }
 
-    // Заменяем полностью предыдущую статичную разметку
     container.innerHTML = "";
     container.appendChild(stage);
 
-    // после обновления DOM — вернуть клики аудиторий и подсветку
+    // навесить клики по комнатам и обновить подсветку занятости
     initRooms();
     attachRefreshHandlers();
     refreshOccupancy();
@@ -281,7 +423,9 @@
     let maxX = 0, maxY = 0;
     for (const el of elements){
       const w = Number(el.width || (el.type==="round" ? el.height : 0)) || 0;
-      const h = Number(el.height || (el.type==="round" ? el.width : 0)) || 0;
+      const h = el.type === "round"
+        ? (Number(el.width || 0) || 0)
+        : (Number(el.height || 0) || 0);
       const x = Number(el.x || 0);
       const y = Number(el.y || 0);
       maxX = Math.max(maxX, x + w);
@@ -325,9 +469,7 @@
     base.style.color = "#111";
 
     // форма
-    if (el.type === "round") {
-      base.style.borderRadius = "50%";
-    } else if (el.type === "oval") {
+    if (el.type === "round" || el.type === "oval") {
       base.style.borderRadius = "50%";
     } else if (el.type === "semicircle") {
       base.style.borderTopLeftRadius = (h * 2) + "px";
@@ -350,7 +492,6 @@
         base.dataset.capacity = String(cap);
         base.setAttribute("type", "button");
         base.style.cursor = "pointer";
-        // «кнопочный» вид без системного стиля
         base.style.backgroundClip = "padding-box";
         base.style.appearance = "none";
         base.style.webkitAppearance = "none";
@@ -398,23 +539,6 @@
     base.textContent = text;
 
     return base;
-  }
-
-  // =========================
-  // Этажи (оставляем — вдруг пригодится)
-  // =========================
-  function initFloorSwitch() {
-    const buttons = $all(".floor-switch button");
-    const floors  = $all(".floor");
-    const setFloor = (num) => {
-      buttons.forEach(b => {
-        const active = b.dataset.floor === String(num);
-        b.classList.toggle("active", active);
-        b.setAttribute("aria-pressed", String(active));
-      });
-      floors.forEach(f => f.classList.toggle("active", f.dataset.floor === String(num)));
-    };
-    buttons.forEach(b => b.addEventListener("click", () => setFloor(b.dataset.floor)));
   }
 
   // =========================
@@ -474,7 +598,7 @@
   }
 
   // =========================
-  // Тайм-зоны (фиксированные UTC)
+  // Тайм-зоны
   // =========================
   function initTimeZones(){
     const sel = document.getElementById("sch-tz");
@@ -509,17 +633,17 @@
 
     sel.innerHTML = "";
     for (const tz of tzOptions){
-      const opt = document.createElement("option");
-      opt.value = tz.value;
-      opt.textContent = tz.label;
-      sel.appendChild(opt);
+        const opt = document.createElement("option");
+        opt.value = tz.value;
+        opt.textContent = tz.label;
+        sel.appendChild(opt);
     }
 
     sel.value = "UTC+03:00";
   }
 
   // =========================
-  // Фильтры (факультет/спец)
+  // Фильтр (факультет/специализация)
   // =========================
   function initFilterMenu(){
     const btn   = $("#filter-btn");
@@ -546,8 +670,6 @@
       const rooms  = $all(".room");
 
       rooms.forEach(r => {
-        if (r.classList.contains("foyer")) return;
-
         const name = r.dataset.room || r.textContent.trim();
         const id   = classroomIdFromRoom(name);
         const meta = RoomsMeta.byId.get(id) || RoomsMeta.byName.get(name);
@@ -598,13 +720,11 @@
   }
 
   // =========================
-  // Комнаты / клики
+  // Клики по комнатам
   // =========================
   function initRooms(){
     const rooms = $all(".room");
     rooms.forEach(btn => {
-      if (btn.classList.contains("foyer")) return;
-
       btn.setAttribute("tabindex","0");
 
       btn.addEventListener("keydown", (e)=>{
@@ -617,7 +737,6 @@
       btn.addEventListener("click", () => {
         const roomName = btn.dataset.room || btn.textContent.trim();
         const capacity = Number(btn.dataset.capacity || 0);
-        const floor    = 1; // в новой сцене — одна плоскость (номер берём из заголовка при необходимости)
 
         const slotSel = $("#slot-filter");
         const slot = {
@@ -625,6 +744,7 @@
           label: slotSel?.selectedOptions?.[0]?.textContent || "—"
         };
 
+        // настройки расписания
         const sched = window.SchedulePanel?.getSettings?.() || {
           dayOfWeek:"", weekParityType:"ANY"
         };
@@ -638,13 +758,14 @@
 
         const classroomId = classroomIdFromRoom(roomName);
 
+        // снять прошлую подсветку
         $all(".room").forEach(r => r.classList.remove("selected"));
         btn.classList.add("selected");
 
         window.RoomDrawer.open({
           roomName,
           capacity,
-          floor,
+          floor: LayoutState.currentLayoutData?.floorNumber ?? null,
           slot,
           classroomId,
           dayOfWeek: sched.dayOfWeek,
@@ -677,7 +798,7 @@
       !!sched.myOnly
     );
 
-    const usedByRoom = new Map(); // classroomId -> persons
+    const usedByRoom = new Map(); // classroomId -> persons total
     for (const b of slim) {
       const g = GroupsCache.byId.get(Number(b.groupId));
       const add = g ? Number(g.personsCount || 0) : 0;
@@ -686,7 +807,6 @@
     }
 
     for (const btn of $all(".room")) {
-      if (btn.classList.contains("foyer")) continue;
       const roomName = btn.dataset.room || btn.textContent.trim();
       const capacity = Number(btn.dataset.capacity || 0);
       const classroomId = classroomIdFromRoom(roomName);
@@ -725,14 +845,19 @@
     $("#sch-weektype") ?.addEventListener("change", refreshOccupancy);
     $("#sch-day")      ?.addEventListener("change", refreshOccupancy);
     $("#slot-filter")  ?.addEventListener("change", refreshOccupancy);
+    $("#building-select")?.addEventListener("change", refreshOccupancy);
+    $("#layout-select")  ?.addEventListener("change", refreshOccupancy);
   }
 
   // =========================
   // Утилиты
   // =========================
   function classroomIdFromRoom(roomName){
+    // сейчас кабинет у нас не гарантированно numeric, поэтому делаем fallback
     const m = String(roomName).match(/\d{3}/);
     if (m) return Number(m[0]);
+
+    // fallback: хэш строки (стабильно в рамках сессии)
     let hash = 1000;
     for (let i=0;i<roomName.length;i++){
       hash = (hash*31 + roomName.charCodeAt(i)) >>> 0;
@@ -751,6 +876,7 @@
     }
   }
 
+  // экспорт чтобы другая логика могла дергать
   window.planRefreshOccupancy = refreshOccupancy;
 
 })();
