@@ -11,17 +11,17 @@
   // STATE
   // =========================
   const state = {
-    elements: [],          // все объекты на полотне
+    elements: [],          // объекты на полотне (rooms, стены и т.д.)
     selectedId: null,      // id выделенного элемента
     dragCtx: null,         // контекст перетаскивания
     resizeCtx: null,       // контекст ресайза
 
-    buildings: [],         // [{id,name}, ...]
+    buildings: [],         // [{id,name}, ...] из /api/buildings
     layoutsByBuilding: new Map(), // buildingId -> [{id,name,floorNumber,layoutJson?}, ...]
-    currentBuildingId: null,
+    currentBuildingId: null,      // выбранный корпус (id)
 
-    currentLayoutId: null, // если null => это новая схема
-    currentLayoutDto: null // dto целиком {id, name, floorNumber, buildingId, layoutJson}
+    currentLayoutId: null,        // id выбранной схемы (null => новая)
+    currentLayoutDto: null        // dto выбранной схемы
   };
 
   function makeId() {
@@ -295,7 +295,7 @@
           break;
         }
         case "corridor":
-          textContent = el.labelText || "Коридор";
+          textContent = el.labelText || "Коридор / зона";
           break;
         case "wall":
           textContent = el.labelText || "Стена";
@@ -469,7 +469,7 @@
     renderAll();
   }
 
-  // PALETTE
+  // --- Palette
   function handlePaletteClick(ev) {
     const type = ev.currentTarget.getAttribute("data-create");
     if (!type) return;
@@ -479,7 +479,7 @@
     renderAll();
   }
 
-  // DRAG MOVE
+  // --- Drag
   function startDrag(ev, id) {
     const el = state.elements.find(e => e.id === id);
     if (!el) return;
@@ -519,7 +519,7 @@
     window.removeEventListener("mouseup", stopDrag);
   }
 
-  // RESIZE
+  // --- Resize
   function startResize(ev, id, corner) {
     const el = state.elements.find(e => e.id === id);
     if (!el) return;
@@ -622,7 +622,7 @@
 
     $("#inp-label-text").addEventListener("input", onInspectorChange);
 
-    // метаданные схемы → только превью
+    // метаданные схемы → влияют только на preview и payload
     $("#sel-building")?.addEventListener("change", onBuildingChangedExternal);
     $("#inp-floor-number")?.addEventListener("input", renderJsonPreview);
     $("#inp-layout-name")?.addEventListener("input", renderJsonPreview);
@@ -650,14 +650,14 @@
       if (!Number.isNaN(newH) && newH > 0) el.height = newH;
     }
 
-    el.fill = $("#inp-fill").value || el.fill;
-    el.stroke = $("#inp-stroke").value || el.stroke;
+    el.fill        = $("#inp-fill").value || el.fill;
+    el.stroke      = $("#inp-stroke").value || el.stroke;
     el.strokeStyle = $("#inp-stroke-style").value || el.strokeStyle;
 
     if (el.type === "room") {
-        el.roomName = $("#inp-room-name").value;
-        el.capacity = parseInt($("#inp-room-capacity").value, 10) || 0;
-        el.classroomId = parseInt($("#inp-room-id").value, 10) || 0;
+      el.roomName    = $("#inp-room-name").value;
+      el.capacity    = parseInt($("#inp-room-capacity").value, 10) || 0;
+      el.classroomId = parseInt($("#inp-room-id").value, 10) || 0;
     }
 
     const needsLabel =
@@ -701,8 +701,11 @@
     };
   }
 
+  // =========================
+  // CSRF helper (если включён Spring Security с CSRF)
+  // =========================
   function getCsrfHeaderMaybe() {
-    const tokenMeta = document.querySelector('meta[name="_csrf"]');
+    const tokenMeta  = document.querySelector('meta[name="_csrf"]');
     const headerMeta = document.querySelector('meta[name="_csrf_header"]');
     if (tokenMeta && headerMeta) {
       return { name: headerMeta.content, value: tokenMeta.content };
@@ -710,47 +713,33 @@
     return null;
   }
 
-  async function postLayout(payload) {
-    // создание новой схемы: POST /api/layouts
+  // =========================
+  // API helpers
+  // =========================
+  async function apiJson(method, url, bodyObj) {
     const headers = { "Content-Type": "application/json" };
     const csrf = getCsrfHeaderMaybe();
     if (csrf) headers[csrf.name] = csrf.value;
 
-    const resp = await fetch("/api/layouts", {
-      method: "POST",
+    const resp = await fetch(url, {
+      method,
       headers,
-      body: JSON.stringify(payload),
-      credentials: "include"
+      credentials: "include",
+      body: bodyObj ? JSON.stringify(bodyObj) : undefined
     });
     return resp;
+  }
+
+  async function postLayout(payload) {
+    return apiJson("POST", "/api/layouts", payload);
   }
 
   async function putLayout(layoutId, payload) {
-    // обновление существующей схемы
-    const headers = { "Content-Type": "application/json" };
-    const csrf = getCsrfHeaderMaybe();
-    if (csrf) headers[csrf.name] = csrf.value;
-
-    const resp = await fetch(`/api/layouts/${layoutId}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(payload),
-      credentials: "include"
-    });
-    return resp;
+    return apiJson("PUT", `/api/layouts/${layoutId}`, payload);
   }
 
   async function deleteLayout(layoutId) {
-    const headers = {};
-    const csrf = getCsrfHeaderMaybe();
-    if (csrf) headers[csrf.name] = csrf.value;
-
-    const resp = await fetch(`/api/layouts/${layoutId}`, {
-      method: "DELETE",
-      headers,
-      credentials: "include"
-    });
-    return resp;
+    return apiJson("DELETE", `/api/layouts/${layoutId}`, null);
   }
 
   async function getLayoutsForBuilding(buildingId) {
@@ -808,11 +797,11 @@
 
     try {
       let resp;
-      // если currentLayoutId == null → новая схема (POST)
-      // иначе → обновление (PUT)
       if (state.currentLayoutId == null) {
+        // новая схема
         resp = await postLayout(reqBody);
       } else {
+        // обновляем существующую
         resp = await putLayout(state.currentLayoutId, reqBody);
       }
 
@@ -823,13 +812,20 @@
       }
 
       const saved = await resp.json();
+      // saved ожидается: {id, buildingId, floorNumber, name, layoutJson}
+
       state.currentLayoutId  = saved.id;
       state.currentLayoutDto = saved;
 
-      // перегружаем список схем для текущего корпуса
+      // обновляем текущий buildingId на тот, куда реально сохранилось
+      state.currentBuildingId = saved.buildingId ?? state.currentBuildingId;
+      if (state.currentBuildingId != null) {
+        $("#sel-building").value = String(state.currentBuildingId);
+      }
+
       await refreshLayoutsInUI();
 
-      // выставим селект на только что сохранённую схему
+      // выбираем сохранённую схему в списке
       $("#sel-existing-layout").value = String(saved.id);
 
       alert(
@@ -837,7 +833,7 @@
         "ID схемы: " + saved.id + "\n" +
         "Корпус: " + (saved.buildingId ?? "—") + "\n" +
         "Этаж: " + (saved.floorNumber ?? "—") + "\n" +
-        "Название: " + saved.name
+        "Название: " + (saved.name ?? "—")
       );
     } catch (e) {
       console.error(e);
@@ -882,8 +878,15 @@
       return;
     }
 
-    // dto: {id,name,buildingId,floorNumber,layoutJson}
     loadDtoIntoEditor(dto);
+
+    // ВАЖНО: схема может относиться к другому корпусу → обновим currentBuildingId
+    state.currentBuildingId = dto.buildingId ?? null;
+    if (state.currentBuildingId != null) {
+      $("#sel-building").value = String(state.currentBuildingId);
+      await refreshLayoutsInUI(); // перерисовать список схем для этого корпуса
+      $("#sel-existing-layout").value = String(dto.id);
+    }
   }
 
   async function onDeleteLayoutClicked() {
@@ -901,7 +904,6 @@
       return;
     }
 
-    // после удаления перезагружаем список схем корпуса
     await refreshLayoutsInUI();
     resetEditorToNewScheme();
 
@@ -932,12 +934,10 @@
     state.currentLayoutId  = dto.id;
     state.currentLayoutDto = dto;
 
-    // выставим тело формы
     $("#sel-building").value = dto.buildingId != null ? String(dto.buildingId) : "";
     $("#inp-floor-number").value = dto.floorNumber != null ? dto.floorNumber : "";
     $("#inp-layout-name").value  = dto.name || "";
 
-    // разбор layoutJson → elements
     let parsedEls = [];
     try {
       const parsed = dto.layoutJson ? JSON.parse(dto.layoutJson) : {};
@@ -960,6 +960,7 @@
   async function loadBuildingsToSelect() {
     const sel = $("#sel-building");
     sel.innerHTML = "";
+
     const opt0 = document.createElement("option");
     opt0.value = "";
     opt0.textContent = "— выберите здание —";
@@ -971,26 +972,28 @@
         credentials: "include",
         headers: { "Accept": "application/json" }
       });
+
       if (!resp.ok) {
         console.warn("Не удалось загрузить здания, HTTP " + resp.status);
-        return;
+        state.buildings = [];
+      } else {
+        const list = await resp.json(); // [{id,name},...]
+        state.buildings = Array.isArray(list) ? list : [];
       }
-      const list = await resp.json(); // [{id,name},...]
-      state.buildings = Array.isArray(list) ? list : [];
-      state.buildings.forEach(b => {
-        const opt = document.createElement("option");
-        opt.value = String(b.id);
-        opt.textContent = b.name || ("Здание #" + b.id);
-        sel.appendChild(opt);
-      });
     } catch (e) {
       console.error("Ошибка загрузки корпусов:", e);
       state.buildings = [];
     }
+
+    state.buildings.forEach(b => {
+      const opt = document.createElement("option");
+      opt.value = String(b.id);
+      opt.textContent = b.name || ("Здание #" + b.id);
+      sel.appendChild(opt);
+    });
   }
 
   async function refreshLayoutsInUI() {
-    // перечитать схемы для текущего здания и заполнить селект
     const bId = state.currentBuildingId;
     if (!bId) {
       fillLayoutsSelect([]);
@@ -1006,13 +1009,10 @@
     const selLay = $("#sel-existing-layout");
     selLay.innerHTML = "";
 
-    // "новая схема"
-    {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "— новая схема —";
-      selLay.appendChild(opt);
-    }
+    const optNew = document.createElement("option");
+    optNew.value = "";
+    optNew.textContent = "— новая схема —";
+    selLay.appendChild(optNew);
 
     list.forEach(l => {
       const floorPart = (l.floorNumber != null)
@@ -1025,7 +1025,6 @@
       selLay.appendChild(opt);
     });
 
-    // если у нас уже есть текущая схема, выставим её
     if (state.currentLayoutId != null) {
       selLay.value = String(state.currentLayoutId);
     } else {
@@ -1034,16 +1033,11 @@
   }
 
   async function onBuildingChangedExternal() {
-    // пользователь сменил корпус вручную в инспекторе/шапке
     const raw = $("#sel-building").value;
     const bId = raw === "" ? null : parseInt(raw, 10);
     state.currentBuildingId = (bId == null || Number.isNaN(bId)) ? null : bId;
 
-    // обновляем список схем для этого корпуса
     await refreshLayoutsInUI();
-
-    // если я сменил корпус, но редактирую уже существующую схему от другого корпуса —
-    // оставляем текущие элементы, но это может стать "новой схемой" при сохранении.
     renderJsonPreview();
   }
 
@@ -1067,8 +1061,6 @@
   }
 
   function bindTopUIEvents() {
-    // уже есть bindTopBarButtons()
-    // но нам нужно ещё слушать смену корпуса отдельно в onBuildingChangedExternal()
     $("#sel-building").addEventListener("change", onBuildingChangedExternal);
   }
 
@@ -1080,18 +1072,15 @@
 
     await loadBuildingsToSelect();
 
-    // после загрузки корпусов:
-    // выберем первый корпус (если есть) по умолчанию
+    // если есть корпуса, по умолчанию ставим первый
     if (state.buildings.length > 0) {
       state.currentBuildingId = state.buildings[0].id;
       $("#sel-building").value = String(state.currentBuildingId);
-      await refreshLayoutsInUI(); // подгрузим схемы
+      await refreshLayoutsInUI();
     } else {
-      // корпусов нет
       fillLayoutsSelect([]);
     }
 
-    // стартуем в режиме "новая схема"
     resetEditorToNewScheme();
   }
 
