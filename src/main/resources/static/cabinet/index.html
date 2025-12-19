@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Личный кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, clearAlerts, toastErr} from '/cabinet/js/api.js';
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        function renderQuickActions(role){
+          const box = qs('#quick-actions');
+          box.innerHTML = '';
+          const mk = (href, text) => `<a class="btn ghost" href="${href}">${text}</a>`;
+
+          if (role === 'ADMIN') {
+            box.innerHTML = [
+              mk('/cabinet/faculties.html','Факультеты'),
+              mk('/cabinet/groups.html','Группы'),
+              mk('/cabinet/rooms.html','Аудитории'),
+              mk('/cabinet/teachers.html','Преподаватели')
+            ].join(' ');
+          } else {
+            box.innerHTML = [
+              mk('/cabinet/me.html','О себе'),
+              mk('/cabinet/bookings.html','Мои бронирования')
+            ].join(' ');
+          }
+        }
+
+        async function loadMe(){
+          const info = qs('#me-info');
+          const err = qs('#me-error');
+          clearAlerts?.();
+          try{
+            const me = await jfetch('/api/v1/users/me', {credentials:'same-origin'});
+            const name = [me.firstName, me.lastName].filter(Boolean).join(' ') || me.login;
+            const roleRu = me.role === 'ADMIN' ? 'Администратор' : 'Пользователь';
+
+            info.innerHTML = `
+              <div class="kv">
+                <div>ID</div><div>#${me.id}</div>
+              </div>
+              <div class="kv">
+                <div>Логин</div><div>${escapeHtml(me.login)}</div>
+              </div>
+              <div class="kv">
+                <div>Роль</div><div>${escapeHtml(roleRu)}</div>
+              </div>
+            `;
+
+            qs('#hello').textContent = `Добро пожаловать, ${name}!`;
+            renderQuickActions(me.role);
+          }catch(e){
+            info.innerHTML = '';
+            qs('#hello').textContent = 'Добро пожаловать!';
+            err.classList.remove('hidden');
+            err.textContent = e?.message || 'Не удалось загрузить профиль. Возможно, требуется вход.';
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('index');
+          await loadMe();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h1 id="hello">Добро пожаловать!</h1>
+        <p class="muted">Это ваш личный кабинет. Быстрые действия ниже.</p>
+    </section>
+
+    <section class="card">
+        <h2>Профиль</h2>
+        <div id="me-error" class="alert error hidden"></div>
+        <div id="me-info"></div>
+        <div class="hint">GET <code>/api/v1/users/me</code></div>
+    </section>
+
+    <section class="card">
+        <h2>Быстрые действия</h2>
+        <div id="quick-actions"></div>
+    </section>
+</main>
+</body>
+</html>

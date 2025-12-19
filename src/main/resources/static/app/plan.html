@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Схема здания · бронирование и свойства кабинета</title>
+    <link rel="stylesheet" href="/app/plan.css">
+</head>
+<body>
+<div class="wrap">
+    <h1>
+        Схема здания:
+        <span id="current-layout-name">—</span>
+    </h1>
+    <p class="lead">
+        Выберите корпус, затем этаж (схему), дату и слот. Кликните по аудитории, чтобы посмотреть доступность или создать бронь.
+    </p>
+
+    <div class="toolbar" role="toolbar" aria-label="Фильтры">
+
+        <!-- КОРПУС -->
+        <div class="group" role="group" aria-label="Выбор корпуса">
+            <strong>Здание / корпус:</strong>
+            <select id="building-select"
+                    class="inline-input"
+                    style="min-width:200px"
+                    aria-label="Здание / корпус">
+                <option value="">— выберите здание —</option>
+                <!-- сюда из JS загрузятся корпуса /api/buildings -->
+            </select>
+        </div>
+
+        <!-- ЭТАЖ (схема для корпуса) -->
+        <div class="group" role="group" aria-label="Выбор схемы этажа">
+            <strong>Этаж (схема):</strong>
+            <select id="layout-select"
+                    class="inline-input"
+                    style="min-width:220px"
+                    aria-label="Этаж (схема)">
+                <option value="">— нет этажей —</option>
+                <!-- сюда из JS загрузятся схемы этого корпуса /api/layouts/by-building/{id} -->
+            </select>
+        </div>
+
+        <!-- ДАТА -->
+        <div class="group">
+            <strong>Дата:</strong>
+            <input id="date-input" type="date" aria-label="Дата бронирования" />
+        </div>
+
+        <!-- СЛОТ -->
+        <div class="group" role="group" aria-label="Выбор слота">
+            <strong>Слот:</strong>
+            <select id="slot-filter" aria-label="Слот времени">
+                <option value="">— выберите слот —</option>
+            </select>
+        </div>
+
+        <!-- СЕРИЯ / ДЕНЬ / TZ -->
+        <div class="group" role="group" aria-label="Параметры серии">
+            <strong>Серия:</strong>
+            <label style="margin-left:6px;">
+                <input type="radio" name="sch-mode" id="sch-mode-weekly" checked> каждую неделю
+            </label>
+            <label style="margin-left:10px;">
+                <input type="radio" name="sch-mode" id="sch-mode-parity"> чёт/нечёт
+            </label>
+
+            <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
+                <option value="">— любая —</option>
+                <option value="ANY">без чётности</option>
+                <option value="ODD">нечётная неделя</option>
+                <option value="EVEN">чётная неделя</option>
+            </select>
+
+            <label style="margin-left:10px;"><strong>День:</strong></label>
+            <select id="sch-day" style="min-width:180px" aria-label="День недели">
+                <option value="">— выберите день —</option>
+                <option value="MONDAY">Понедельник</option>
+                <option value="TUESDAY">Вторник</option>
+                <option value="WEDNESDAY">Среда</option>
+                <option value="THURSDAY">Четверг</option>
+                <option value="FRIDAY">Пятница</option>
+                <option value="SATURDAY">Суббота</option>
+                <option value="SUNDAY">Воскресенье</option>
+            </select>
+
+            <label style="margin-left:10px;"><strong>TZ:</strong></label>
+            <select id="sch-tz" aria-label="Тайм-зона" style="min-width:240px">
+                <!-- наполняется JS -->
+            </select>
+        </div>
+
+        <!-- Фильтр факультет / специализация -->
+        <div class="group filter-wrap">
+            <button id="filter-btn" type="button">Фильтр</button>
+            <div id="filter-menu" class="filter-menu" role="dialog" aria-label="Фильтр аудиторий">
+                <div class="row">
+                    <div>Факультет:</div>
+                    <div><select id="flt-faculty"></select></div>
+                </div>
+                <div class="row">
+                    <div>Специализация:</div>
+                    <div><select id="flt-spec"></select></div>
+                </div>
+                <div class="actions">
+                    <button type="button" id="flt-apply">Применить</button>
+                    <button type="button" id="flt-clear">Сбросить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Легенда загрузки -->
+        <div class="group" aria-hidden="false">
+            <span class="badge" style="background:#eee;border-color:#bbb">пусто</span>
+            <span class="badge" style="background:#e8f8ef;border-color:#6ccf96">≤100%</span>
+            <span class="badge" style="background:#fff4cc;border-color:#f2c200">до +25%</span>
+            <span class="badge" style="background:#ffe1e1;border-color:#ff6b6b">до +50%</span>
+            <span class="badge" style="background:#111;color:#fff;border-color:#000">&gt; +50%</span>
+        </div>
+
+        <!-- Навигация -->
+        <div class="actions">
+            <a class="btn btn-menu" href="/app/mainmenu.html">Главное меню</a>
+            <a class="btn" href="/cabinet/me.html">Личный кабинет</a>
+            <a class="btn" href="/logout">Выход</a>
+
+            <!-- переход в конструктор плана -->
+            <a class="btn"
+               id="to-editor-btn"
+               href="/app/layout-editor.html"
+               style="background:#1b6;border-color:#1b6;color:#fff;">
+                Конструктор плана
+            </a>
+        </div>
+    </div>
+
+    <!-- Блок расписания преподавателя -->
+    <section id="teacher-schedule-block" class="teacher-schedule" hidden aria-label="Моё расписание">
+        <h3>Моё расписание на выбранный день</h3>
+        <div id="teacher-schedule-list" class="ts-list"></div>
+        <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
+    </section>
+
+    <!-- Контейнер сгенерированной схемы здания -->
+    <div id="building-plan" class="building" aria-label="План этажа">
+        <!-- JS полностью заменит содержимое на layout-stage -->
+    </div>
+
+    <div class="entrance" aria-label="Главный вход">Вход</div>
+</div>
+
+<!-- overlay + drawer -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" role="dialog" aria-labelledby="d-title">
+    <header>
+        <h2 id="d-title">Бронирование</h2>
+        <button type="button" id="d-close" aria-label="Закрыть панель">Закрыть</button>
+    </header>
+    <div class="content">
+        <div class="kv"><div>Помещение:</div><div><b id="d-room">—</b></div></div>
+        <div class="kv"><div>Вместимость:</div><div><span id="d-cap"></span></div></div>
+        <div class="kv"><div>Слот:</div><div><span id="d-slot"></span></div></div>
+        <div class="kv"><div>Кем занято:</div><div id="d-by" class="muted">—</div></div>
+
+        <div class="hr"></div>
+
+        <div class="kv"><div>Выбрать группы:</div><div id="groups-box" class="list"></div></div>
+        <div class="kv"><div>Текущие:</div><div id="current-chips" class="chips muted">—</div></div>
+        <div class="kv"><div>Загрузка:</div><div id="usage-line" class="muted">0 / 0</div></div>
+
+        <div class="split" style="margin-top:10px">
+            <button type="button" id="save-book" class="btn">Сохранить бронирование</button>
+            <button type="button" id="clear-book" class="btn danger-btn">Снять бронирование</button>
+            <button type="button" id="save-series" class="btn" style="background:#1b6; border-color:#1b6">Создать серию</button>
+        </div>
+
+        <div class="hr"></div>
+        <h3 class="section-title">Сведения о кабинете</h3>
+        <div class="kv"><div>Вместимость:</div><div><input id="c-cap" type="number" min="0" placeholder="0" style="width:120px"></div></div>
+        <div class="kv"><div>Корпус:</div><div><select id="c-building" style="max-width:260px"></select></div></div>
+        <div class="kv"><div>Факультет:</div><div><select id="c-faculty" style="max-width:260px"></select></div></div>
+        <div class="kv"><div>Специализация:</div><div><select id="c-spec" style="max-width:260px"></select></div></div>
+
+        <div class="split" style="margin-top:8px">
+            <button type="button" id="save-room-meta" class="btn">Сохранить кабинет</button>
+        </div>
+    </div>
+</aside>
+
+<script src="/app/components/room-drawer.js"></script>
+<script src="/app/components/schedule-panel.js"></script>
+<script src="/app/plan-page.js"></script>
+<script src="/app/teacher-schedule.js"></script>
+</body>
+</html>

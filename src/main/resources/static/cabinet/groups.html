@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Создать группу — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        let faculties = [];
+
+        async function loadFaculties() {
+          try {
+            faculties = await jfetch('/api/faculties', { credentials:'same-origin' });
+            const sel = qs('#g-faculty');
+            sel.innerHTML = '<option value="">— не выбирать —</option>';
+            faculties.forEach(f => {
+              const opt = document.createElement('option');
+              opt.value = String(f.id);
+              opt.textContent = f.name;
+              sel.appendChild(opt);
+            });
+          } catch (e) {
+            // тихо игнорим, просто не будет выбора факультета
+          }
+        }
+
+        function facultyNameById(id){
+          if (!id) return null;
+          const f = faculties.find(x => x.id === id);
+          return f ? f.name : null;
+        }
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function loadGroups(){
+          const box = qs('#groups-list');
+          const err = qs('#groups-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const list = await jfetch('/api/groups', { credentials:'same-origin' });
+            if (!Array.isArray(list) || list.length === 0){
+              box.innerHTML = '<div class="muted">Пока нет групп</div>';
+              return;
+            }
+
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Группа</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            list.forEach(g=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              const facName = facultyNameById(g.facultyId);
+              row.innerHTML = `
+                <div>#${g.id}</div>
+                <div>
+                  <b>${escapeHtml(g.name)}</b>
+                  <span class="muted"> · size=${g.personsCount ?? 0}</span>
+                  ${facName ? ` <span class="muted"> · ${escapeHtml(facName)}</span>` : ''}
+                </div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${g.id}" title="Удалить группу #${g.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            toastErr(err, e?.message || 'Ошибка загрузки списка');
+          }
+        }
+
+        async function createGroup(){
+          clearAlerts();
+          const err = qs('#group-error'), ok = qs('#group-ok');
+          const name = qs('#g-name').value.trim();
+          const sizeVal = qs('#g-size').value;
+          const facVal = qs('#g-faculty').value;
+
+          const personsCount = sizeVal ? Number(sizeVal) : NaN;
+          const facultyId = facVal ? Number(facVal) : null;
+
+          if (!name) return toastErr(err, 'Укажите имя группы');
+          if (!Number.isFinite(personsCount) || personsCount < 1) {
+            return toastErr(err, 'Размер группы должен быть целым числом ≥ 1');
+          }
+
+          const btn = qs('#btn-create-group');
+          const prevText = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Создаём...';
+
+          try{
+            const dto = await jfetch('/api/groups', {
+              credentials:'same-origin',
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ name, personsCount, facultyId })
+            });
+            toastOK(ok, `Группа создана (id=${dto.id})`);
+            qs('#g-name').value = '';
+            qs('#g-size').value = '';
+            qs('#g-faculty').value = '';
+            await loadGroups();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось создать группу');
+          }finally{
+            btn.disabled = false; btn.textContent = prevText;
+          }
+        }
+
+        async function deleteGroup(id){
+          const err = qs('#groups-error'), ok = qs('#groups-ok');
+          clearAlerts();
+          try{
+            await jfetch(`/api/groups/${id}`, { credentials:'same-origin', method:'DELETE' });
+            toastOK(ok, `Группа #${id} удалена`);
+            await loadGroups();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить группу #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('groups');
+          qs('#btn-create-group').addEventListener('click', createGroup);
+
+          // Enter-submit в полях
+          ['#g-name','#g-size'].forEach(sel=>{
+            qs(sel).addEventListener('keydown', e=>{
+              if (e.key === 'Enter'){ e.preventDefault(); createGroup(); }
+            });
+          });
+
+          // Делегирование на удаление
+          qs('#groups-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if(!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить группу #${id}? Это действие необратимо.`)){
+              deleteGroup(id);
+            }
+          });
+
+          await loadFaculties();
+          await loadGroups();
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Создать группу</h2>
+        <div id="group-error" class="alert error hidden"></div>
+        <div id="group-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="g-name">Код/имя группы*</label>
+                <input id="g-name" placeholder="например, CS-101" autocomplete="off"/>
+            </div>
+            <div>
+                <label for="g-size">Размер (personsCount)*</label>
+                <input id="g-size" type="number" inputmode="numeric" min="1" placeholder="например, 30"/>
+            </div>
+        </div>
+
+        <div class="row">
+            <div>
+                <label for="g-faculty">Факультет (опционально)</label>
+                <select id="g-faculty"></select>
+            </div>
+        </div>
+
+        <button id="btn-create-group" class="btn primary">Создать</button>
+        <div class="hint">POST <code>/api/groups</code> → { name, personsCount, facultyId? }</div>
+    </section>
+
+    <section class="card">
+        <h2>Список групп</h2>
+        <div id="groups-error" class="alert error hidden"></div>
+        <div id="groups-ok" class="alert ok hidden"></div>
+        <div id="groups-list"></div>
+        <div class="hint">DELETE <code>/api/groups/{id}</code></div>
+    </section>
+</main>
+</body>
+</html>

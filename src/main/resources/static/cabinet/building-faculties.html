@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Факультеты корпуса — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function preloadBuildings(){
+          const sel = qs('#bf-building');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            const list = await jfetch('/api/buildings', { credentials:'same-origin' });
+            sel.innerHTML = list.length ? '<option value="">— выберите корпус —</option>' : '<option value="">— корпусов нет —</option>';
+            list.forEach(b=>{
+              const opt = document.createElement('option');
+              opt.value = String(b.id);
+              opt.textContent = `#${b.id} — ${b.name}`;
+              sel.appendChild(opt);
+            });
+          }catch{
+            sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+          }
+        }
+
+        async function preloadFaculties(){
+          const sel = qs('#bf-faculty');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            const list = await jfetch('/api/faculties', { credentials:'same-origin' });
+            sel.innerHTML = list.length ? '<option value="">— выберите факультет —</option>' : '<option value="">— факультетов нет —</option>';
+            list.forEach(f=>{
+              const opt = document.createElement('option');
+              opt.value = String(f.id);
+              opt.textContent = `#${f.id} — ${f.name}`;
+              sel.appendChild(opt);
+            });
+          }catch{
+            sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+          }
+        }
+
+        async function loadBuildingLinks(){
+          const box = qs('#bf-links');
+          const bId = Number(qs('#bf-building').value);
+          box.innerHTML = '';
+          if (!bId){
+            box.innerHTML = '<div class="muted">Выберите корпус, чтобы увидеть его факультеты</div>';
+            return;
+          }
+          try{
+            const list = await jfetch(`/api/building-faculties/${bId}`, { credentials:'same-origin' });
+            if (!Array.isArray(list) || list.length === 0){
+              box.innerHTML = '<div class="muted">У корпуса нет назначенных факультетов</div>';
+              return;
+            }
+
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Факультет</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            list.forEach(f=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${f.id}</div>
+                <div><b>${escapeHtml(f.name)}</b></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del-f="${f.id}" title="Убрать факультет из корпуса">Убрать</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            box.innerHTML = '<div class="muted">Ошибка загрузки связей</div>';
+            toastErr(qs('#bf-error'), e?.message || 'Не удалось получить список факультетов корпуса');
+          }
+        }
+
+        async function loadFacultyLinks(){
+          const box = qs('#bf-faculty-links');
+          const fId = Number(qs('#bf-faculty').value);
+          box.innerHTML = '';
+          if (!fId){
+            box.innerHTML = '<div class="muted">Выберите факультет, чтобы увидеть его корпуса</div>';
+            return;
+          }
+          try{
+            const list = await jfetch(`/api/faculty-buildings/${fId}`, { credentials:'same-origin' });
+            if (!Array.isArray(list) || list.length === 0){
+              box.innerHTML = '<div class="muted">У факультета нет назначенных корпусов</div>';
+              return;
+            }
+
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Корпус</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            list.forEach(b=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              row.innerHTML = `
+                <div>#${b.id}</div>
+                <div><b>${escapeHtml(b.name)}</b></div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del-b="${b.id}" title="Убрать корпус у факультета">Убрать</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            box.innerHTML = '<div class="muted">Ошибка загрузки связей</div>';
+            toastErr(qs('#bf-error-right'), e?.message || 'Не удалось получить список корпусов факультета');
+          }
+        }
+
+        async function map(){
+          clearAlerts();
+          const err = qs('#bf-error'), ok = qs('#bf-ok');
+          const bId = Number(qs('#bf-building').value);
+          const fId = Number(qs('#bf-faculty').value);
+          if (!bId || !fId) return toastErr(err, 'Выберите корпус и факультет');
+
+          const btn = qs('#btn-map-bf');
+          const prev = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Назначаю...';
+          try{
+            await jfetch('/api/building-faculties', {
+              credentials:'same-origin',
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ buildingId: bId, facultyId: fId })
+            });
+            toastOK(ok, 'Факультет назначен корпусу');
+            await loadBuildingLinks();
+            await loadFacultyLinks();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось назначить факультет корпусу');
+          }finally{
+            btn.disabled = false; btn.textContent = prev;
+          }
+        }
+
+        async function unmapByFaculty(fId){
+          const bId = Number(qs('#bf-building').value);
+          if (!bId || !fId) return;
+          try{
+            await jfetch(`/api/building-faculties?buildingId=${bId}&facultyId=${fId}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(qs('#bf-ok'), 'Связь удалена');
+            await loadBuildingLinks();
+            await loadFacultyLinks();
+          }catch(e){
+            toastErr(qs('#bf-error'), e?.message || 'Не удалось удалить связь');
+          }
+        }
+
+        async function unmapByBuilding(bId){
+          const fId = Number(qs('#bf-faculty').value);
+          if (!fId || !bId) return;
+          try{
+            await jfetch(`/api/building-faculties?buildingId=${bId}&facultyId=${fId}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(qs('#bf-ok-right'), 'Связь удалена');
+            await loadBuildingLinks();
+            await loadFacultyLinks();
+          }catch(e){
+            toastErr(qs('#bf-error-right'), e?.message || 'Не удалось удалить связь');
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('building-faculties');
+          await preloadBuildings();
+          await preloadFaculties();
+
+          qs('#btn-map-bf').addEventListener('click', map);
+
+          // при смене селектов — обновлять списки
+          qs('#bf-building').addEventListener('change', loadBuildingLinks);
+          qs('#bf-faculty').addEventListener('change', loadFacultyLinks);
+
+          // делегирование удаления (слева: из списка факультетов корпуса)
+          qs('#bf-links').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del-f]');
+            if (!btn) return;
+            const fId = Number(btn.dataset.delF);
+            if (!Number.isFinite(fId)) return;
+            if (confirm('Убрать этот факультет у корпуса?')) unmapByFaculty(fId);
+          });
+
+          // делегирование удаления (справа: из списка корпусов факультета)
+          qs('#bf-faculty-links').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del-b]');
+            if (!btn) return;
+            const bId = Number(btn.dataset.delB);
+            if (!Number.isFinite(bId)) return;
+            if (confirm('Убрать этот корпус у факультета?')) unmapByBuilding(bId);
+          });
+
+          // первичная отрисовка подсказок
+          await loadBuildingLinks();
+          await loadFacultyLinks();
+        });
+    </script>
+    <style>
+        .two-cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+        @media (max-width: 900px){ .two-cols { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+
+    <section class="card">
+        <h2>Назначить факультет корпусу</h2>
+        <div id="bf-error" class="alert error hidden"></div>
+        <div id="bf-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label>Корпус*</label>
+                <select id="bf-building"></select>
+                <div class="hint">Источник: <code>GET /api/buildings</code></div>
+            </div>
+            <div>
+                <label>Факультет*</label>
+                <select id="bf-faculty"></select>
+                <div class="hint">Источник: <code>GET /api/faculties</code></div>
+            </div>
+        </div>
+
+        <button class="btn primary" id="btn-map-bf" style="margin-top:12px">Назначить</button>
+        <div class="hint">POST <code>/api/building-faculties</code> → { buildingId, facultyId }</div>
+    </section>
+
+    <section class="two-cols">
+        <div class="card">
+            <h3>Факультеты выбранного корпуса</h3>
+            <div id="bf-links"></div>
+            <div id="bf-error-left" class="alert error hidden"></div>
+            <div id="bf-ok-left" class="alert ok hidden"></div>
+            <div class="hint">
+                GET <code>/api/building-faculties/{buildingId}</code><br>
+                DELETE <code>/api/building-faculties?buildingId=&facultyId=</code>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Корпуса выбранного факультета</h3>
+            <div id="bf-faculty-links"></div>
+            <div id="bf-error-right" class="alert error hidden"></div>
+            <div id="bf-ok-right" class="alert ok hidden"></div>
+            <div class="hint">
+                GET <code>/api/faculty-buildings/{facultyId}</code><br>
+                DELETE <code>/api/building-faculties?buildingId=&facultyId=</code>
+            </div>
+        </div>
+    </section>
+
+</main>
+</body>
+</html>

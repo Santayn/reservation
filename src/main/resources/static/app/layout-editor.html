@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Конструктор плана здания</title>
+
+    <link rel="stylesheet" href="/app/layout-editor.css" />
+
+    <!-- CSRF подключишь при необходимости
+    <meta name="_csrf" content="${_csrf.token}">
+    <meta name="_csrf_header" content="${_csrf.headerName}">
+    -->
+</head>
+<body>
+<div class="le-page">
+
+    <!-- HEADER / TOP BAR -->
+    <header class="le-topbar">
+        <div class="le-topbar-left">
+            <h1 class="le-title">Конструктор плана здания</h1>
+
+            <!-- Блок метаданных схемы -->
+            <div class="le-top-meta"
+                 style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+
+                <!-- ЗДАНИЕ / КОРПУС -->
+                <div class="le-field" style="min-width:200px;">
+                    <label class="le-label" for="sel-building">Здание / корпус</label>
+                    <select id="sel-building" class="le-input">
+                        <option value="">— выберите здание —</option>
+                    </select>
+                </div>
+
+                <!-- СУЩЕСТВУЮЩИЕ СХЕМЫ В ЭТОМ ЗДАНИИ -->
+                <div class="le-field" style="min-width:240px;">
+                    <label class="le-label" for="sel-existing-layout">Существующая схема</label>
+                    <select id="sel-existing-layout" class="le-input">
+                        <option value="">— новая схема —</option>
+                    </select>
+
+                    <div class="le-top-actions-row" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;">
+                        <button id="btn-load-layout" class="le-btn" style="min-width:140px;">
+                            Загрузить схему
+                        </button>
+                        <button id="btn-delete-layout" class="le-btn danger" style="min-width:140px;">
+                            Удалить схему
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ЭТАЖ № -->
+                <div class="le-field" style="min-width:90px;">
+                    <label class="le-label" for="inp-floor-number">Этаж №</label>
+                    <input id="inp-floor-number"
+                           class="le-input"
+                           type="number"
+                           step="1"
+                           min="0"
+                           placeholder="1" />
+                </div>
+
+                <!-- НАЗВАНИЕ СХЕМЫ / ЭТАЖА -->
+                <div class="le-field" style="min-width:240px;">
+                    <label class="le-label" for="inp-layout-name">Название схемы / этажа</label>
+                    <input id="inp-layout-name"
+                           class="le-input"
+                           type="text"
+                           placeholder="Например: 2 этаж, левое крыло" />
+                </div>
+
+                <!-- actions с полотном и сохранением -->
+                <div class="le-top-actions"
+                     style="display:flex; flex-wrap:wrap; gap:8px;">
+                    <button id="btn-save" class="le-btn">Сохранить схему</button>
+                    <button id="btn-delete-elem" class="le-btn danger">Удалить выделенный</button>
+                    <button id="btn-clear" class="le-btn warn">Очистить полотно</button>
+                </div>
+            </div>
+        </div>
+
+        <nav class="le-top-links">
+            <a class="le-link" href="/app/plan.html">← Назад к плану</a>
+            <a class="le-link" href="/app/mainmenu.html">Главное меню</a>
+            <a class="le-link" href="/cabinet/index.html">Кабинет админа</a>
+            <a class="le-link" href="/logout">Выход</a>
+        </nav>
+    </header>
+
+    <!-- WORK AREA -->
+    <main class="le-main">
+
+        <!-- CANVAS AREA -->
+        <section class="le-canvas-wrap">
+            <div id="canvas"
+                 class="le-canvas"
+                 tabindex="0"
+                 aria-label="Рабочее полотно для плана здания">
+            </div>
+
+            <!-- PALETTE -->
+            <footer class="le-palette" aria-label="Панель элементов">
+                <div class="le-palette-inner">
+                    <div class="le-palette-title">Добавить элемент:</div>
+
+                    <button class="le-tool-btn" data-create="room">🏫 Аудитория</button>
+                    <button class="le-tool-btn" data-create="corridor">🛣 Коридор / зона</button>
+                    <button class="le-tool-btn" data-create="wall">🧱 Стена</button>
+                    <button class="le-tool-btn" data-create="door">🚪 Дверь / вход</button>
+                    <button class="le-tool-btn" data-create="label">🔤 Надпись / текст</button>
+                    <button class="le-tool-btn" data-create="round">⭕ Круглая зона</button>
+                    <button class="le-tool-btn" data-create="rect">▭ Прямоугольник</button>
+                    <button class="le-tool-btn" data-create="oval">⬭ Овал</button>
+                    <button class="le-tool-btn" data-create="semicircle">◠ Полукруг</button>
+                </div>
+            </footer>
+        </section>
+
+        <!-- INSPECTOR -->
+        <aside class="le-inspector" aria-label="Свойства выделенного элемента">
+            <h2 class="le-inspector-title">Свойства</h2>
+
+            <div id="no-selection" class="le-empty-hint">
+                Ничего не выбрано. Кликните по элементу на полотне.
+            </div>
+
+            <form id="inspector-form" class="le-form" style="display:none;">
+                <div class="le-field">
+                    <label class="le-label">ID элемента</label>
+                    <input id="inp-id" class="le-input" type="text" disabled>
+                </div>
+
+                <div class="le-field">
+                    <label class="le-label">Тип</label>
+                    <input id="inp-type" class="le-input" type="text" disabled>
+                </div>
+
+                <div class="le-row2">
+                    <div class="le-field">
+                        <label class="le-label">X</label>
+                        <input id="inp-x" class="le-input" type="number">
+                    </div>
+                    <div class="le-field">
+                        <label class="le-label">Y</label>
+                        <input id="inp-y" class="le-input" type="number">
+                    </div>
+                </div>
+
+                <div class="le-row2" id="size-row">
+                    <div class="le-field">
+                        <label class="le-label">Ширина</label>
+                        <input id="inp-w" class="le-input" type="number" min="10">
+                    </div>
+                    <div class="le-field">
+                        <label class="le-label">Высота</label>
+                        <input id="inp-h" class="le-input" type="number" min="10">
+                    </div>
+                </div>
+
+                <div class="le-field" id="circle-radius-row" style="display:none;">
+                    <label class="le-label">Диаметр круглой зоны</label>
+                    <input id="inp-radius" class="le-input" type="number" min="10">
+                </div>
+
+                <div class="le-row2">
+                    <div class="le-field">
+                        <label class="le-label">Цвет заливки</label>
+                        <input id="inp-fill" class="le-input" type="color">
+                    </div>
+                    <div class="le-field">
+                        <label class="le-label">Цвет рамки</label>
+                        <input id="inp-stroke" class="le-input" type="color">
+                    </div>
+                </div>
+
+                <div class="le-field">
+                    <label class="le-label">Стиль рамки</label>
+                    <select id="inp-stroke-style" class="le-input">
+                        <option value="solid">Сплошная</option>
+                        <option value="dashed">Пунктир</option>
+                        <option value="dotted">Точки</option>
+                    </select>
+                </div>
+
+                <!-- Аудитория -->
+                <div id="room-extra"
+                     style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
+                    <div class="le-field">
+                        <label class="le-label">Название аудитории</label>
+                        <input id="inp-room-name" class="le-input" type="text" placeholder="Ауд. 101">
+                    </div>
+                    <div class="le-row2">
+                        <div class="le-field">
+                            <label class="le-label">Вместимость</label>
+                            <input id="inp-room-capacity" class="le-input" type="number" min="0" step="1">
+                        </div>
+                        <div class="le-field">
+                            <label class="le-label">ID аудитории</label>
+                            <input id="inp-room-id" class="le-input" type="number" min="0" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Подпись -->
+                <div id="label-extra"
+                     style="display:none; border-top:1px solid #ddd; padding-top:10px; margin-top:10px;">
+                    <div class="le-field">
+                        <label class="le-label">Текст элемента / подпись</label>
+                        <input id="inp-label-text" class="le-input" type="text"
+                               placeholder="Например: Лифт / WC / Лестница / Зона отдыха / Прямоугольник №2">
+                    </div>
+                </div>
+
+            </form>
+
+            <section class="le-save-preview">
+                <label class="le-label" for="save-json-area">Текущее состояние (JSON для сохранения):</label>
+                <textarea id="save-json-area" class="le-json-dump" readonly></textarea>
+            </section>
+        </aside>
+
+    </main>
+</div>
+
+<script src="/app/layout-editor.js"></script>
+</body>
+</html>

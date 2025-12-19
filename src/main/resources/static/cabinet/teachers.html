@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Создать преподавателя — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, toastOK, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        let faculties = [];
+
+        function escapeHtml(s){
+          return String(s ?? '')
+            .replaceAll('&','&amp;').replaceAll('<','&lt;')
+            .replaceAll('>','&gt;').replaceAll('"','&quot;')
+            .replaceAll("'",'&#39;');
+        }
+
+        async function preloadFaculties(){
+          const sel = qs('#t-faculty');
+          sel.innerHTML = '<option value="">Загрузка…</option>';
+          try{
+            faculties = await jfetch('/api/faculties', { credentials:'same-origin' });
+            sel.innerHTML = faculties.length ? '<option value="">— выберите —</option>' : '<option value="">— нет факультетов —</option>';
+            faculties.forEach(f=>{
+              const opt = document.createElement('option');
+              opt.value = String(f.id);
+              opt.textContent = f.name;
+              sel.appendChild(opt);
+            });
+          }catch{
+            sel.innerHTML = '<option value="">Ошибка загрузки</option>';
+          }
+        }
+
+        function facultyNameById(id){
+          const f = faculties.find(x => x.id === id);
+          return f ? f.name : null;
+        }
+
+        async function loadTeachers(){
+          const box = qs('#teachers-list');
+          const err = qs('#teacher-error');
+          box.innerHTML = '';
+          clearAlerts();
+          try{
+            const list = await jfetch('/api/teachers', { credentials:'same-origin' });
+            if (!Array.isArray(list) || list.length === 0){
+              box.innerHTML = '<div class="muted">Пока нет преподавателей</div>';
+              return;
+            }
+
+            // заголовок
+            const head = document.createElement('div');
+            head.className = 'kv muted';
+            head.innerHTML = `
+              <div>ID</div>
+              <div>Преподаватель</div>
+              <div style="text-align:right">Действия</div>
+            `;
+            box.appendChild(head);
+
+            list.forEach(t=>{
+              const row = document.createElement('div');
+              row.className = 'kv';
+              const facName = facultyNameById(t.facultyId);
+              row.innerHTML = `
+                <div>#${t.id}</div>
+                <div><b>${escapeHtml(t.login)}</b>${facName ? ` <span class="muted">· ${escapeHtml(facName)}</span>` : ''}</div>
+                <div style="text-align:right">
+                  <button class="btn danger" data-del="${t.id}" title="Удалить преподавателя #${t.id}">Удалить</button>
+                </div>
+              `;
+              box.appendChild(row);
+            });
+          }catch(e){
+            box.innerHTML = '<div class="muted">Ошибка загрузки списка</div>';
+            if (e?.message) toastErr(err, e.message);
+          }
+        }
+
+        async function createTeacher(){
+          clearAlerts();
+          const err = qs('#teacher-error'), ok = qs('#teacher-ok');
+          const login = qs('#t-login').value.trim();
+          const password = qs('#t-pass').value;
+          const facultyIdVal = qs('#t-faculty').value;
+
+          if (!login || !password || !facultyIdVal){
+            return toastErr(err, 'Заполните обязательные поля: логин, пароль и факультет');
+          }
+
+          const facultyId = Number(facultyIdVal);
+          if (!Number.isFinite(facultyId) || facultyId < 1){
+            return toastErr(err, 'Выберите корректный факультет');
+          }
+
+          const btn = qs('#btn-create-teacher');
+          const prevText = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Создаём...';
+
+          try{
+            const dto = await jfetch('/api/teachers', {
+              credentials:'same-origin',
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ login, password, facultyId })
+            });
+            toastOK(ok, `Преподаватель создан (id=${dto.id})`);
+            qs('#t-login').value = '';
+            qs('#t-pass').value = '';
+            qs('#t-faculty').value = '';
+            await loadTeachers();
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось создать преподавателя');
+          }finally{
+            btn.disabled = false; btn.textContent = prevText;
+          }
+        }
+
+        async function deleteTeacher(id){
+          const err = qs('#teacher-error'), ok = qs('#teacher-ok');
+          clearAlerts();
+          try{
+            await jfetch(`/api/teachers/${id}`, {
+              credentials:'same-origin',
+              method:'DELETE'
+            });
+            toastOK(ok, `Преподаватель #${id} удалён`);
+            await loadTeachers();
+          }catch(e){
+            toastErr(err, e?.message || `Не удалось удалить преподавателя #${id}`);
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('teachers');
+          await preloadFaculties();
+          await loadTeachers();
+
+          qs('#btn-create-teacher').addEventListener('click', createTeacher);
+
+          // Enter-submit
+          ['#t-login','#t-pass'].forEach(sel=>{
+            qs(sel).addEventListener('keydown', e=>{
+              if (e.key === 'Enter'){ e.preventDefault(); createTeacher(); }
+            });
+          });
+
+          // Делегирование кликов по удалению
+          qs('#teachers-list').addEventListener('click', (e)=>{
+            const btn = e.target.closest('[data-del]');
+            if(!btn) return;
+            const id = Number(btn.dataset.del);
+            if (!Number.isFinite(id)) return;
+            if (confirm(`Удалить преподавателя #${id}? Это действие необратимо.`)){
+              deleteTeacher(id);
+            }
+          });
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h2>Создать преподавателя</h2>
+        <div id="teacher-error" class="alert error hidden"></div>
+        <div id="teacher-ok" class="alert ok hidden"></div>
+
+        <div class="row">
+            <div>
+                <label for="t-login">Логин*</label>
+                <input id="t-login" placeholder="ivanov.i" autocomplete="username"/>
+            </div>
+            <div>
+                <label for="t-pass">Пароль*</label>
+                <input id="t-pass" type="password" placeholder="••••••••" autocomplete="new-password"/>
+            </div>
+        </div>
+
+        <div class="row">
+            <div>
+                <label for="t-faculty">Факультет*</label>
+                <select id="t-faculty"></select>
+                <div class="hint">Источник: <code>GET /api/faculties</code></div>
+            </div>
+        </div>
+
+        <button id="btn-create-teacher" class="btn primary">Создать</button>
+        <div class="hint">POST <code>/api/teachers</code> → { login, password, facultyId }</div>
+    </section>
+
+    <section class="card">
+        <h2>Список преподавателей</h2>
+        <div id="teachers-list"></div>
+        <div class="hint">DELETE <code>/api/teachers/{id}</code></div>
+    </section>
+</main>
+</body>
+</html>

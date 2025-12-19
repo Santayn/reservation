@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>О себе — кабинет</title>
+    <link rel="stylesheet" href="/cabinet/css/cabinet.css">
+    <script type="module">
+        import {injectSidebar, jfetch, qs, show, hide, toastErr, clearAlerts} from '/cabinet/js/api.js';
+
+        function roleRu(role){
+          return role === 'ADMIN' ? 'Администратор' : 'Пользователь';
+        }
+
+        async function loadMe(){
+          const err = qs('#me-error'), box = qs('#me-box');
+          clearAlerts?.();
+          hide(err); hide(box);
+          try{
+            const me = await jfetch('/api/v1/users/me', { credentials:'same-origin' });
+
+            // Эти поля могут быть null — аккуратно выводим
+            qs('#me-first').textContent = me.firstName ?? '';
+            qs('#me-last').textContent  = me.lastName ?? '';
+            qs('#me-login').textContent = me.login ?? '';
+            qs('#me-email').textContent = me.email ?? '';
+            qs('#me-role').textContent  = roleRu(me.role ?? 'USER');
+            qs('#me-id').textContent    = `#${me.id}`;
+
+            show(box);
+          }catch(e){
+            toastErr(err, e?.message || 'Не удалось загрузить профиль');
+          }
+        }
+
+        window.addEventListener('DOMContentLoaded', async ()=>{
+          await injectSidebar('me');
+          await loadMe();
+          qs('#btn-reload-me').addEventListener('click', loadMe);
+        });
+    </script>
+</head>
+<body>
+<aside class="sidebar" id="sidebar"></aside>
+<main class="content">
+    <section class="card">
+        <h1>О себе</h1>
+        <div id="me-error" class="alert error hidden"></div>
+
+        <div id="me-box" class="hidden">
+            <div class="kv"><div>ID:</div><div id="me-id"></div></div>
+            <div class="kv"><div>Имя:</div><div id="me-first"></div></div>
+            <div class="kv"><div>Фамилия:</div><div id="me-last"></div></div>
+            <div class="kv"><div>Логин:</div><div id="me-login"></div></div>
+            <div class="kv"><div>Email:</div><div id="me-email"></div></div>
+            <div class="kv"><div>Роль:</div><div id="me-role"></div></div>
+            <div class="hint">Источник: <code>GET /api/v1/users/me</code></div>
+        </div>
+
+        <button class="btn" id="btn-reload-me">Обновить</button>
+    </section>
+</main>
+</body>
+</html>

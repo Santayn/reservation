@@ -1,0 +1,534 @@
+:root{
+  --line:#222;
+  --bg:#f7f7f9;
+  --text:#111;
+
+  --free:#e8f8ef;
+  --free-border:#6ccf96;
+
+  --warn:#fff4cc;
+  --warn-border:#f2c200;
+
+  --danger:#ffe1e1;
+  --danger-border:#ff6b6b;
+
+  --over:#111;
+  --over-text:#fff;
+
+  --hover:#f1f5ff;
+
+  /* рамки */
+  --sel:#2563eb;                  /* рамка выбранной аудитории */
+  --sel-glow:rgba(37,99,235,.25);
+  --flt:#7c3aed;                  /* рамка совпадения по фильтру (фиолетовый) */
+  --flt-glow:rgba(124,58,237,.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+}
+
+.wrap {
+  width: min(1200px,96vw);
+  margin: 0 auto;
+  padding: 28px 12px 48px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+p.lead {
+  margin: 0 0 14px;
+  color: #555;
+}
+
+/* ─── Верхняя панель фильтров / выбора параметров ─── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.toolbar .group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+select,
+button,
+.btn,
+input[type="date"] {
+  border: 2px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+input[type="date"] {
+  cursor: text;
+}
+
+.floor-switch button.active {
+  background: var(--hover);
+  font-weight: 600;
+}
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.btn.btn-menu {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* ─── Контейнер плана здания ─── */
+.building {
+  border: 2px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  min-height: 420px;
+}
+
+/* если когда-нибудь вернётся раскладка "крыльев" */
+.wings {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 2fr;
+}
+
+@media (max-width:1000px){
+  .wings {
+    grid-template-columns: 1fr;
+  }
+  .wing {
+    border-right: none;
+    border-bottom: 2px solid var(--line);
+  }
+  .wing:last-child {
+    border-bottom: none;
+  }
+}
+
+.wing {
+  border-right: 2px solid var(--line);
+  padding: 14px;
+}
+
+.wing:last-child {
+  border-right: none;
+}
+
+.wing h3 {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.rooms {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 6px;
+}
+
+/* ─── Карточка аудитории ─── */
+.room {
+  position: relative;
+  z-index: 0;
+
+  /* базовое состояние ДО раскраски */
+  border: 2px dashed #999;
+  border-radius: 8px;
+  background: #fff;
+
+  padding: 6px;
+  text-align: center;
+  font-size: 12px;
+  cursor: pointer;
+
+  transition:
+    transform .12s ease,
+    background-color .12s ease,
+    border-color .12s ease,
+    opacity .12s ease,
+    filter .12s ease;
+}
+
+.room:hover {
+  transform: translateY(-1px);
+}
+
+.room:focus-visible {
+  outline: 3px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+/* ─── Состояния заполненности (навешиваются JS: paintRoom) ─── */
+
+/* пусто или не занято */
+.room.idle {
+  background: #eee;
+  border-color: #bbb;
+  border-style: solid;
+  color: #333;
+}
+
+/* до 100% */
+.room.ok {
+  background: var(--free);
+  border-color: var(--free-border);
+  border-style: solid;
+}
+
+/* до +25% переполнения */
+.room.warn {
+  background: var(--warn);
+  border-color: var(--warn-border);
+  border-style: solid;
+}
+
+/* до +50% переполнения */
+.room.danger {
+  background: var(--danger);
+  border-color: var(--danger-border);
+  border-style: solid;
+}
+
+/* больше +50% переполнения */
+.room.over {
+  background: var(--over);
+  border-color: #000;
+  border-style: solid;
+  color: var(--over-text);
+  cursor: pointer;
+}
+
+/* чуть крупнее центрированные комнаты (если план не по координатам) */
+.center .room {
+  width: 90%;
+  margin: 0 auto 10px;
+  font-size: 13px;
+}
+
+/* холл/вестибюль — всегда серый и некликабельный */
+.foyer {
+  cursor: default;
+  border-style: solid !important;
+  background: #eee;
+}
+
+/* Этаж/вкладка */
+.floor {
+  display: none;
+}
+.floor.active {
+  display: block;
+}
+
+/* "Вход" снизу */
+.entrance {
+  width: 160px;
+  height: 80px;
+  margin: 6px auto 0;
+  border: 2px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 80px 80px;
+  background: #eee;
+  display: grid;
+  place-items: center;
+}
+
+/* Легенда */
+.badge {
+  display: inline-block;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: #fafafa;
+  font-size: 12px;
+}
+
+/* ─── Фильтр факультет / спец ─── */
+.filter-wrap {
+  position: relative;
+}
+
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+
+  width: min(320px,90vw);
+  background: #fff;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  display: none;
+}
+
+.filter-menu.open {
+  display: block;
+}
+
+.filter-menu .row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.filter-menu .actions {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+/* ─── Выдвижная панель (drawer) ─── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: #0006;
+  opacity: 0;
+  pointer-events: none;
+  transition: .2s;
+  z-index: 20;
+}
+.overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(520px,92vw);
+  background: #fff;
+  border-left: 2px solid var(--line);
+  transform: translateX(100%);
+  transition: .25s;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+.drawer.open {
+  transform: none;
+}
+
+.drawer header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--line);
+}
+.drawer header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.drawer .content {
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  border: 1px solid #bbb;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fafafa;
+}
+
+.chip b {
+  font-weight: 600;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.muted {
+  color: #666;
+}
+
+.split {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.danger-btn {
+  border-color: #c1121f;
+  color: #c1121f;
+  background: #fff;
+}
+
+.hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid #ddd;
+}
+
+.section-title {
+  margin: 6px 0 2px;
+  font-size: 14px;
+}
+
+/* ─── Выделение выбранной аудитории (клик по комнате -> открыт drawer) ─── */
+.room.selected::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 3px solid var(--sel);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 2; /* выше рамки фильтра */
+  box-shadow: 0 0 0 6px var(--sel-glow);
+}
+
+/* ─── Подсветка результатов фильтра (факультет/спец) ─── */
+.room.filter-hit::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--flt);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 1; /* под selection, но над заливкой */
+  box-shadow: 0 0 0 6px var(--flt-glow);
+}
+
+.room.dim {
+  opacity: .45;
+  filter: saturate(.7);
+}
+
+/* ─── Подсветка "аудитория из моего расписания" ─── */
+.room.teacher-focus {
+  outline: 3px solid #6a5acd;
+  box-shadow:
+    0 0 0 4px rgba(106,90,205,0.25),
+    0 8px 20px rgba(106,90,205,0.35);
+  position: relative;
+  z-index: 2;
+  animation: teacherPulse 1s ease-in-out 2;
+}
+
+@keyframes teacherPulse {
+  0%   { transform: scale(1.00); }
+  50%  { transform: scale(1.03); }
+  100% { transform: scale(1.00); }
+}
+
+/* ─── Блок расписания преподавателя ─── */
+.teacher-schedule {
+  margin-top: 14px;
+}
+
+.teacher-schedule h2 {
+  margin: 8px 0 6px;
+  font-size: 16px;
+}
+
+.ts-help {
+  margin-bottom: 6px;
+  color:#666;
+}
+
+.ts-list {
+  display: grid;
+  gap: 6px;
+}
+
+.ts-ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.ts-item {
+  padding: 0;
+}
+
+.ts-item .ts-row {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 120px 120px 1fr 1fr 100px;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d7d7d7;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ts-item .ts-row:hover {
+  background: #f7f7ff;
+  border-color: #b6b6ff;
+}
+
+.ts-col {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ts-day,
+.ts-room,
+.ts-group {
+  font-weight: 600;
+}
+
+.ts-empty {
+  color: #777;
+}
