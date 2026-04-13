@@ -125,10 +125,11 @@ public class BookingRestController {
             @RequestParam DayOfWeek dayOfWeek,
             @RequestParam WeekParityType weekParityType,
             @RequestParam Long slotId,
-            @RequestParam Long classroomId,
+            @RequestParam(required = false) Long classroomId,
+            @RequestParam(required = false) LocalDate date,
             @RequestParam(required = false, defaultValue = "false") boolean slim
     ) {
-        List<Booking> filtered = service.search(dayOfWeek, weekParityType, slotId, classroomId);
+        List<Booking> filtered = service.search(dayOfWeek, weekParityType, slotId, classroomId, date);
 
         if (slim) {
             List<BookingSlimResponse> body = filtered.stream()
@@ -156,6 +157,19 @@ public class BookingRestController {
     ) {
         Long teacherId = authTeacherService.currentTeacherId();
         List<Booking> list = service.searchByTeacher(teacherId, dayOfWeek, weekParityType, slotId, classroomId);
+        List<BookingResponse> body = list.stream().map(this::toResponse).toList();
+        return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/group/{groupId}")
+    public ResponseEntity<List<BookingResponse>> groupSchedule(
+            @PathVariable Long groupId,
+            @RequestParam(required = false) DayOfWeek dayOfWeek,
+            @RequestParam(required = false) WeekParityType weekParityType,
+            @RequestParam(required = false) Long slotId,
+            @RequestParam(required = false) Long classroomId
+    ) {
+        List<Booking> list = service.searchByGroup(groupId, dayOfWeek, weekParityType, slotId, classroomId);
         List<BookingResponse> body = list.stream().map(this::toResponse).toList();
         return ResponseEntity.ok(body);
     }

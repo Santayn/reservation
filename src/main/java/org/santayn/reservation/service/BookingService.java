@@ -73,8 +73,9 @@ public class BookingService {
     public List<Booking> search(DayOfWeek dayOfWeek,
                                 WeekParityType weekParityType,
                                 Long slotId,
-                                Long classroomId) {
-        return bookingRepository.search(dayOfWeek, weekParityType, slotId, classroomId);
+                                Long classroomId,
+                                LocalDate date) {
+        return bookingRepository.search(dayOfWeek, parityTypesForDisplay(weekParityType), slotId, classroomId, date);
     }
 
     @Transactional(readOnly = true)
@@ -83,7 +84,35 @@ public class BookingService {
                                          WeekParityType weekParityType,
                                          Long slotId,
                                          Long classroomId) {
-        return bookingRepository.searchByTeacher(teacherId, dayOfWeek, weekParityType, slotId, classroomId);
+        return bookingRepository.searchByTeacher(
+                teacherId,
+                dayOfWeek,
+                parityTypesForDisplay(weekParityType),
+                slotId,
+                classroomId
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<Booking> searchByGroup(Long groupId,
+                                       DayOfWeek dayOfWeek,
+                                       WeekParityType weekParityType,
+                                       Long slotId,
+                                       Long classroomId) {
+        return bookingRepository.searchByGroup(
+                groupId,
+                dayOfWeek,
+                parityTypesForDisplay(weekParityType),
+                slotId,
+                classroomId
+        );
+    }
+
+    private List<WeekParityType> parityTypesForDisplay(WeekParityType weekParityType) {
+        if (weekParityType == null) {
+            return List.of(WeekParityType.ANY, WeekParityType.EVEN, WeekParityType.ODD);
+        }
+        return List.of(weekParityType);
     }
 
     // ===== Операции от имени текущего пользователя =====
@@ -113,15 +142,15 @@ public class BookingService {
                 throw new IllegalArgumentException("Для разовой брони преподавателя требуются date и expiresAt.");
             }
 
-            long cnt = bookingRepository.countInWindow(
-                    booking.getClassroomId(),
+            long cnt = bookingRepository.countGroupInWindow(
+                    booking.getGroupId(),
                     booking.getDayOfWeek(),
                     booking.getWeekParityType(),
                     booking.getSlotId(),
                     bookingDate
             );
             if (cnt > 0) {
-                throw new IllegalStateException("Окно занято. Бронь невозможна.");
+                throw new IllegalStateException("Группа уже занята в этот день и слот.");
             }
 
             booking.setTeacherId(me.getId());

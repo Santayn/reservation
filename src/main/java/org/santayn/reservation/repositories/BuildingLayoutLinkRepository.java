@@ -17,5 +17,6 @@ public interface BuildingLayoutLinkRepository extends JpaRepository<BuildingLayo
     Optional<BuildingLayoutLink> findFirstByLayout_IdOrderByFloorNumberAsc(Long layoutId);
     
     List<BuildingLayoutLink> findAllByLayout_Id(Long layoutId);
-}
 
+    boolean existsByBuilding_IdAndFloorNumber(Long buildingId, Integer floorNumber);
+}

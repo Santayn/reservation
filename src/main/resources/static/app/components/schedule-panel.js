@@ -5,7 +5,6 @@
   "use strict";
 
   const WEEK_TYPES = [
-    { value: "ANY",  label: "обычная (без чётности)" },
     { value: "EVEN", label: "чётная" },
     { value: "ODD",  label: "нечётная" }
   ];
@@ -51,18 +50,34 @@
 
     if (tzInput && !tzInput.value) tzInput.value = "Europe/Berlin";
 
-    function onModeChange() {
-      weekType.disabled = false;
-      daySel.disabled = false;
+    function notifyScheduleChanged() {
+      weekType?.dispatchEvent(new Event("change", { bubbles: true }));
+      daySel?.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    modeWeekly?.addEventListener("change", onModeChange);
-    modeParity?.addEventListener("change", onModeChange);
-    onModeChange();
+
+    function onModeChange(notify = true) {
+      if (modeWeekly?.checked) {
+        weekType.value = "ANY";
+        weekType.disabled = true;
+      } else {
+        weekType.disabled = false;
+        if (!weekType.value || weekType.value === "ANY") {
+          weekType.value = "EVEN";
+        }
+      }
+      daySel.disabled = false;
+      if (notify) notifyScheduleChanged();
+    }
+    modeWeekly?.addEventListener("change", () => onModeChange(true));
+    modeParity?.addEventListener("change", () => onModeChange(true));
+    onModeChange(false);
   }
 
   function getSettings() {
     const day = $("#sch-day")?.value || "";
-    const weekParityType = $("#sch-weektype")?.value || "ANY";
+    const weeklyMode = $("#sch-mode-weekly")?.checked;
+    const rawWeekType = $("#sch-weektype")?.value || "ANY";
+    const weekParityType = weeklyMode ? "ANY" : (rawWeekType === "ANY" ? "EVEN" : rawWeekType);
     const timeZoneId = $("#sch-tz")?.value?.trim() || "Europe/Berlin";
     return { dayOfWeek: day, weekParityType, timeZoneId };
   }

@@ -67,8 +67,6 @@
             </label>
 
             <select id="sch-weektype" style="margin-left:8px; min-width:200px" aria-label="Тип недели">
-                <option value="">— любая —</option>
-                <option value="ANY">без чётности</option>
                 <option value="ODD">нечётная неделя</option>
                 <option value="EVEN">чётная неделя</option>
             </select>
@@ -140,6 +138,16 @@
         <h3>Моё расписание на выбранный день</h3>
         <div id="teacher-schedule-list" class="ts-list"></div>
         <div id="teacher-schedule-empty" class="ts-empty" style="display:none">Занятий не найдено</div>
+    </section>
+
+    <section id="group-schedule-block" class="teacher-schedule" hidden aria-label="Расписание группы">
+        <h3>Расписание группы</h3>
+        <div class="ts-controls">
+            <label for="group-schedule-select">Группа:</label>
+            <select id="group-schedule-select" aria-label="Выбор группы"></select>
+        </div>
+        <div id="group-schedule-list" class="ts-list"></div>
+        <div id="group-schedule-empty" class="ts-empty" style="display:none">Выберите группу</div>
     </section>
 
     <!-- Контейнер сгенерированной схемы здания -->

@@ -33,6 +33,7 @@
     open: false,
     current: null,          // { roomName, classroomDbId, capacity, floor, slot:{id,label}, dayOfWeek, weekParityType }
     lastBookings: [],       // slim-брони по текущей аудитории/слоту
+    busyGroupIds: new Set(),
     selectedTeacherId: null // выбранный преподаватель (обязателен)
   };
 
@@ -155,6 +156,7 @@
     state.current = roomCtx;
     state.selectedTeacherId = null;
     state.lastBookings = [];
+    state.busyGroupIds = new Set();
 
     // заполняем верхнюю часть панели
     el("d-room").textContent = firstText(roomCtx.roomName, "—");
@@ -173,8 +175,7 @@
     if (capInput) {
       capInput.value = String(roomCtx.capacity ?? 0);
       capInput.oninput = () => {
-        const capNow = Number(capInput.value) || 0;
-        updateUsage(state.lastBookings, capNow, groupsCache.byId);
+        updateUsageWithSelection();
       };
     }
 
@@ -182,10 +183,12 @@
     Promise.all([
       fetchCurrentBookings(roomCtx).catch(() => []),
       fetchGroups().catch(() => []),
-      fetchTeachers().catch(() => [])
+      fetchTeachers().catch(() => []),
+      fetchBusyBookingsForWindow(roomCtx).catch(() => [])
     ])
-    .then(([bookings]) => {
+    .then(([bookings, _groups, _teachers, busyBookings]) => {
       state.lastBookings = bookings;
+      state.busyGroupIds = busyGroupIdsFromBookings([...bookings, ...busyBookings]);
       renderCurrentBookings(bookings, groupsCache.byId);
       renderGroups(groupsCache.list);
       fillTeacherSelect(teachersCache.list);
@@ -219,6 +222,7 @@
     state.open = false;
     state.current = null;
     state.lastBookings = [];
+    state.busyGroupIds = new Set();
     state.selectedTeacherId = null;
 
     $("#overlay").classList.remove("open");
@@ -301,12 +305,31 @@
       slotId:        String(ctx.slot?.id || 0),
       slim:          "true"
     });
-
     const r = await fetch(`/api/bookings/search?${params.toString()}`, {
       credentials: "include"
     });
     if (!r.ok) return [];
     return r.json();
+  }
+
+  async function fetchBusyBookingsForWindow(ctx) {
+    const params = new URLSearchParams({
+      dayOfWeek:     ctx.dayOfWeek || "",
+      weekParityType: ctx.weekParityType || "ANY",
+      slotId:        String(ctx.slot?.id || 0),
+      slim:          "true"
+    });
+    const r = await fetch(`/api/bookings/search?${params.toString()}`, {
+      credentials: "include"
+    });
+    if (!r.ok) return [];
+    return r.json();
+  }
+
+  function busyGroupIdsFromBookings(bookings) {
+    return new Set((Array.isArray(bookings) ? bookings : [])
+      .map((b) => Number(b.groupId))
+      .filter(Number.isFinite));
   }
 
   // ======================
@@ -368,6 +391,15 @@
     }
 
     return r.json();
+  }
+
+  async function saveBookings(selectedGroupIds) {
+    const ids = Array.from(new Set(selectedGroupIds.map(Number).filter(Number.isFinite)));
+    const saved = [];
+    for (const groupId of ids) {
+      saved.push(await saveBooking(groupId));
+    }
+    return saved;
   }
 
   // Удалить ВСЕ найденные брони в этой ячейке (слот+комната+день)
@@ -446,14 +478,18 @@
           try {
             await deleteBookingForGroup(gid);
             const fresh = await fetchCurrentBookings(state.current);
+            const busyBookings = await fetchBusyBookingsForWindow(state.current);
             state.lastBookings = fresh;
+            state.busyGroupIds = busyGroupIdsFromBookings([...fresh, ...busyBookings]);
             renderCurrentBookings(fresh, groupsCache.byId);
+            renderGroups(groupsCache.list);
             updateUsage(
               fresh,
               Number(el("c-cap").value) || (state.current?.capacity || 0),
               groupsCache.byId
             );
             window.planRefreshOccupancy?.();
+            window.refreshSchedules?.();
           } catch (e) {
             alert(e.message || "Не удалось удалить группу.");
           }
@@ -472,15 +508,23 @@
     if (!box) return;
 
     box.innerHTML = "";
+    const busyIds = state.busyGroupIds || new Set();
+    const available = (Array.isArray(groups) ? groups : [])
+      .filter((g) => !busyIds.has(Number(g.id)));
 
-    for (const g of groups) {
+    if (!available.length) {
+      box.innerHTML = `<div class="muted">Нет свободных групп для выбранных дня, слота и режима недели.</div>`;
+      return;
+    }
+
+    for (const g of available) {
       const label = document.createElement("label");
       label.style.display = "flex";
       label.style.alignItems = "center";
       label.style.gap = "6px";
 
       const input = document.createElement("input");
-      input.type = "radio";
+      input.type = "checkbox";
       input.name = "sel-group";
       input.value = String(g.id);
       label.appendChild(input);
@@ -491,6 +535,25 @@
 
       box.appendChild(label);
     }
+
+    box.onchange = () => {
+      updateUsageWithSelection();
+    };
+  }
+
+  function selectedGroupIds() {
+    return Array.from(document.querySelectorAll('input[name="sel-group"]:checked'))
+      .map((input) => Number(input.value))
+      .filter(Number.isFinite);
+  }
+
+  function updateUsageWithSelection() {
+    const extraBookings = selectedGroupIds().map((groupId) => ({ groupId }));
+    updateUsage(
+      [...state.lastBookings, ...extraBookings],
+      Number(el("c-cap")?.value) || (state.current?.capacity || 0),
+      groupsCache.byId
+    );
   }
 
   // ======================
@@ -712,10 +775,9 @@
 
     el("save-book")?.addEventListener("click", async () => {
       try {
-        // выбрали группу (radio)
-        const selectedGroupRadio = document.querySelector('input[name="sel-group"]:checked');
-        if (!selectedGroupRadio) {
-          alert("Выберите группу.");
+        const groupIds = selectedGroupIds();
+        if (!groupIds.length) {
+          alert("Выберите одну или несколько групп.");
           return;
         }
         if (!Number.isFinite(state.selectedTeacherId)) {
@@ -723,14 +785,17 @@
           return;
         }
 
-        await saveBooking(Number(selectedGroupRadio.value));
+        await saveBookings(groupIds);
 
         // после сохранения — перезагружаем текущие брони,
         // пересчитываем usage, перекрашиваем план
         const bookings = await fetchCurrentBookings(state.current);
+        const busyBookings = await fetchBusyBookingsForWindow(state.current);
         state.lastBookings = bookings;
+        state.busyGroupIds = busyGroupIdsFromBookings([...bookings, ...busyBookings]);
 
         renderCurrentBookings(bookings, groupsCache.byId);
+        renderGroups(groupsCache.list);
         updateUsage(
           bookings,
           Number(el("c-cap").value) || (state.current?.capacity || 0),
@@ -738,6 +803,7 @@
         );
 
         window.planRefreshOccupancy?.();
+        window.refreshSchedules?.();
         alert("Бронирование сохранено.");
       } catch (e) {
         alert(e.message || "Не удалось сохранить бронирование.");
@@ -749,9 +815,12 @@
         await deleteExistingBooking();
 
         const bookings = await fetchCurrentBookings(state.current);
+        const busyBookings = await fetchBusyBookingsForWindow(state.current);
         state.lastBookings = bookings;
+        state.busyGroupIds = busyGroupIdsFromBookings([...bookings, ...busyBookings]);
 
         renderCurrentBookings(bookings, groupsCache.byId);
+        renderGroups(groupsCache.list);
         updateUsage(
           bookings,
           Number(el("c-cap").value) || (state.current?.capacity || 0),
@@ -759,6 +828,7 @@
         );
 
         window.planRefreshOccupancy?.();
+        window.refreshSchedules?.();
         alert("Бронирование снято.");
       } catch (e) {
         alert(e.message || "Не удалось снять бронирование.");
@@ -782,7 +852,8 @@
           specializationIds: sVal ? [Number(sVal)] : []
         };
 
-        await apiPut(`/api/classrooms/${classroomPk}`, body);
+        const saved = await apiPut(`/api/classrooms/${classroomPk}`, body);
+        updatePlanRoomMetaCache(saved, classroomPk, body);
 
         alert("Свойства кабинета сохранены.");
 
@@ -791,11 +862,37 @@
           Number(el("c-cap").value) || 0,
           groupsCache.byId
         );
+        window.planRefreshOccupancy?.();
       } catch (e) {
         alert(e.message || "Не удалось сохранить кабинет.");
       }
     });
   })();
+
+  function updatePlanRoomMetaCache(saved, classroomPk, fallback) {
+    const roomsMeta = window.RoomsMeta;
+    if (!roomsMeta?.byId || !roomsMeta?.byName || !state.current) return;
+
+    const id = Number(saved?.id ?? classroomPk);
+    const name = firstText(saved?.name, state.current.roomName);
+    const meta = {
+      id,
+      name,
+      floor: Number(saved?.floor ?? state.current.floor ?? 0),
+      buildingId: saved?.buildingId != null ? Number(saved.buildingId) : null,
+      corpus: saved?.corpus || saved?.building || "",
+      facultyIds: Array.isArray(saved?.facultyIds)
+        ? saved.facultyIds.map(Number)
+        : (fallback?.facultyIds || []).map(Number),
+      specializationIds: Array.isArray(saved?.specializationIds)
+        ? saved.specializationIds.map(Number)
+        : (fallback?.specializationIds || []).map(Number)
+    };
+
+    if (Number.isFinite(id)) roomsMeta.byId.set(id, meta);
+    if (name) roomsMeta.byName.set(name, meta);
+    roomsMeta.loaded = true;
+  }
 
   // экспортируем API наружу, чтобы plan-page.js мог вызвать Drawer.open(...)
   window.RoomDrawer = {

@@ -8,7 +8,7 @@ import org.santayn.reservation.models.building.Building;
 @Entity
 @Table(
         name = "classrooms",
-        uniqueConstraints = @UniqueConstraint(name = "uq_classroom_name", columnNames = {"name"})
+        uniqueConstraints = @UniqueConstraint(name = "uq_classroom_building_name", columnNames = {"building_id", "name"})
 )
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor

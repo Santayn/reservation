@@ -11,6 +11,7 @@ public class BuildingLayoutCreateRequest {
     @NotNull
     private Long buildingId;
 
+    @NotNull
     private Integer floorNumber;
 
     @NotBlank

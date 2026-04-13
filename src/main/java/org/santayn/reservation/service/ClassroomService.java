@@ -151,37 +151,98 @@ public class ClassroomService {
      * Никаких ссылок на этаж не пишем (в модели их нет). Здание тоже не трогаем.
      */
     @Transactional
-    public void upsertRoomsForLayout(Long layoutId, List<RoomCandidate> rooms) {
-        if (rooms == null || rooms.isEmpty()) return;
+    public Map<String, Long> upsertRoomsForLayout(Long buildingId, List<RoomCandidate> rooms) {
+        Map<String, Long> classroomIdsByRoomKey = new HashMap<>();
+        if (rooms == null || rooms.isEmpty()) return classroomIdsByRoomKey;
+
+        Building building = null;
+        if (buildingId != null) {
+            building = buildingRepo.findById(buildingId)
+                    .orElseThrow(() -> new NotFoundException("Building not found: " + buildingId));
+        }
 
         for (RoomCandidate rc : rooms) {
             String roomName = Optional.ofNullable(rc.name()).orElse("").trim();
             if (roomName.isEmpty()) continue;
             Integer wantedCap = Optional.ofNullable(rc.capacity()).orElse(0);
 
-            Optional<Classroom> found = classroomRepo.findByName(roomName);
+            Classroom room = resolveRoomForLayout(building, rc, roomName, wantedCap);
 
-            if (found.isEmpty()) {
-                classroomRepo.save(
-                        Classroom.builder()
-                                .name(roomName)
-                                .capacity(wantedCap)
-                                .build()
-                );
-            } else {
-                Classroom existing = found.get();
-                if (!Objects.equals(existing.getCapacity(), wantedCap)) {
-                    existing.setCapacity(wantedCap);
-                    classroomRepo.save(existing);
-                }
+            boolean changed = false;
+            if (!Objects.equals(room.getName(), roomName)) {
+                room.setName(roomName);
+                changed = true;
+            }
+            if (!Objects.equals(room.getCapacity(), wantedCap)) {
+                room.setCapacity(wantedCap);
+                changed = true;
+            }
+            if (building != null && room.getBuilding() == null) {
+                room.setBuilding(building);
+                changed = true;
+            }
+
+            if (changed) {
+                room = classroomRepo.save(room);
+            }
+
+            String key = Optional.ofNullable(rc.key()).orElse("").trim();
+            if (!key.isEmpty()) {
+                classroomIdsByRoomKey.put(key, room.getId());
             }
         }
+
+        return classroomIdsByRoomKey;
     }
 
     // ---------- вспомогательные типы/методы ----------
 
     /** Упрощённая запись аудитории из layoutJson. */
-    public record RoomCandidate(String name, Integer capacity) {}
+    public record RoomCandidate(String key, Long classroomId, String name, Integer capacity) {}
+
+    private Classroom resolveRoomForLayout(Building building, RoomCandidate rc, String roomName, Integer capacity) {
+        Long buildingId = building != null ? building.getId() : null;
+        Long requestedId = rc.classroomId();
+
+        if (requestedId != null) {
+            Optional<Classroom> byId = classroomRepo.findById(requestedId)
+                    .filter(room -> roomBelongsToLayoutBuilding(room, buildingId));
+            if (byId.isPresent()) {
+                return byId.get();
+            }
+        }
+
+        if (buildingId != null) {
+            Optional<Classroom> byBuildingAndName = classroomRepo.findByBuilding_IdAndNameIgnoreCase(buildingId, roomName);
+            if (byBuildingAndName.isPresent()) {
+                return byBuildingAndName.get();
+            }
+
+            Optional<Classroom> unbound = classroomRepo.findByBuildingIsNullAndNameIgnoreCase(roomName);
+            if (unbound.isPresent()) {
+                return unbound.get();
+            }
+        } else {
+            Optional<Classroom> byName = classroomRepo.findByNameIgnoreCase(roomName);
+            if (byName.isPresent()) {
+                return byName.get();
+            }
+        }
+
+        return classroomRepo.save(
+                Classroom.builder()
+                        .name(roomName)
+                        .capacity(capacity)
+                        .building(building)
+                        .build()
+        );
+    }
+
+    private boolean roomBelongsToLayoutBuilding(Classroom room, Long layoutBuildingId) {
+        if (layoutBuildingId == null) return true;
+        if (room.getBuilding() == null) return true;
+        return Objects.equals(room.getBuilding().getId(), layoutBuildingId);
+    }
 
     private ClassroomDto toDto(Classroom c) {
         Long buildingId = c.getBuilding() != null ? c.getBuilding().getId() : null;

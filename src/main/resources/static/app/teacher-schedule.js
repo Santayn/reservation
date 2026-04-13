@@ -40,6 +40,7 @@
   // кэши (часть уже создаётся в plan-page.js)
   const RoomsMeta      = window.RoomsMeta      || { byId:new Map(), byName:new Map(), loaded:false };
   const GroupsCache    = window.GroupsCache    || { byId:new Map(), loaded:false };
+  const TeachersCache  = window.TeachersCache  || { byId:new Map(), loaded:false };
   const BuildingsCache = window.BuildingsCache || { byId:new Map(), list:[], loaded:false };
 
   // =========================
@@ -65,6 +66,28 @@
     ) || `Группа ${id}`;
   }
 
+  function teacherDisplayName(teacherObj, id) {
+    return firstText(
+      teacherObj?.fullName,
+      teacherObj?.name,
+      teacherObj?.login,
+      teacherObj?.username
+    ) || `Преподаватель ${id}`;
+  }
+
+  function groupsCacheHasDisplayNames() {
+    return Array.from(GroupsCache.byId?.values?.() || [])
+      .some((g) => !!firstText(
+        g?.name,
+        g?.title,
+        g?.groupName,
+        g?.shortName,
+        g?.code,
+        g?.number,
+        g?.label
+      ));
+  }
+
   function formatTime(isoLike){
     if (!isoLike) return "??:??";
     const d = new Date(String(isoLike).replace(" ","T"));
@@ -73,10 +96,47 @@
     return `${hh}:${mm}`;
   }
 
+  function mergeScheduleRows(rows) {
+    const byPlace = new Map();
+
+    for (const row of rows) {
+      const roomKey = Number.isFinite(row.classroomId)
+        ? `id:${row.classroomId}`
+        : `place:${row.buildingId ?? ""}|${row.floorNum}|${row.roomName}`;
+      const key = `${row.slotId}|${roomKey}`;
+
+      let merged = byPlace.get(key);
+      if (!merged) {
+        merged = {
+          ...row,
+          groupNames: [],
+          groupNameSet: new Set()
+        };
+        byPlace.set(key, merged);
+      }
+
+      if (row.groupName && !merged.groupNameSet.has(row.groupName)) {
+        merged.groupNameSet.add(row.groupName);
+        merged.groupNames.push(row.groupName);
+      }
+    }
+
+    return Array.from(byPlace.values()).map((row) => {
+      row.groupNames.sort((a, b) => a.localeCompare(b, "ru"));
+      const groupName = row.groupNames.join(", ");
+      delete row.groupNameSet;
+      return {
+        ...row,
+        groupName,
+        groupNames: row.groupNames
+      };
+    });
+  }
+
   // какая чётность недели сейчас выбрана в панели слева над планом
   function currentWeekType() {
-    return $("#sch-weektype")?.value
-        || window.SchedulePanel?.getSettings?.()?.weekParityType
+    return window.SchedulePanel?.getSettings?.()?.weekParityType
+        || $("#sch-weektype")?.value
         || "ANY";
   }
 
@@ -85,6 +145,16 @@
     const wtSel   = $("#sch-weektype");
     const daySel  = $("#sch-day");
     const slotSel = $("#slot-filter");
+    const weeklyMode = $("#sch-mode-weekly");
+    const parityMode = $("#sch-mode-parity");
+
+    if (weekType === "ANY") {
+      if (weeklyMode) weeklyMode.checked = true;
+      if (parityMode) parityMode.checked = false;
+    } else {
+      if (weeklyMode) weeklyMode.checked = false;
+      if (parityMode) parityMode.checked = true;
+    }
 
     if (wtSel) {
       wtSel.value = weekType;
@@ -156,7 +226,7 @@
   // ensure caches (гарантированно заполняем кэши)
   // =========================
   async function ensureGroupsLoaded(){
-    if (GroupsCache.loaded && GroupsCache.byId && GroupsCache.byId.size) return;
+    if (GroupsCache.loaded && GroupsCache.byId && GroupsCache.byId.size && groupsCacheHasDisplayNames()) return;
     try{
       const r = await fetch("/api/groups?size=1000", { credentials:"include" });
       if (!r.ok) throw 0;
@@ -179,6 +249,7 @@
       // игнорируем, просто оставим пусто
     } finally {
       GroupsCache.loaded = true;
+      window.GroupsCache = GroupsCache;
     }
   }
 
@@ -233,6 +304,29 @@
     }
   }
 
+  async function ensureTeachersLoaded(){
+    if (TeachersCache.loaded && TeachersCache.byId && TeachersCache.byId.size) return;
+    try{
+      const r = await fetch("/api/teachers?size=1000", { credentials:"include" });
+      if (!r.ok) throw 0;
+      const data = await r.json();
+      const arr = Array.isArray(data) ? data : (Array.isArray(data.content) ? data.content : []);
+      TeachersCache.byId = new Map(arr.map(t => [
+        Number(t.id),
+        {
+          id: Number(t.id),
+          login: firstText(t.login, t.username),
+          fullName: firstText(t.fullName, t.name)
+        }
+      ]));
+    } catch {
+      // игнорируем
+    } finally {
+      TeachersCache.loaded = true;
+      window.TeachersCache = TeachersCache;
+    }
+  }
+
   // =========================
   // bookings cache (мои пары)
   // =========================
@@ -265,6 +359,29 @@
 
     bookingsCache.set(k, p);
     return p;
+  }
+
+  async function fetchGroupBookings(groupId, dayOfWeek, weekParityType, slotId) {
+    if (!Number.isFinite(Number(groupId))) {
+      return { data: [] };
+    }
+
+    const params = new URLSearchParams({
+      dayOfWeek,
+      weekParityType,
+      slotId: String(slotId)
+    });
+
+    return fetch(`/api/bookings/group/${groupId}?${params.toString()}`, {
+      credentials:"include"
+    })
+    .then(async r => {
+      if (!r.ok) {
+        return { data: [] };
+      }
+      return { data: await r.json() };
+    })
+    .catch(() => ({ data: [] }));
   }
 
   // =========================
@@ -366,6 +483,37 @@
   // отрисовка расписания
   // =========================
   let buildVersion = 0;
+  let groupBuildVersion = 0;
+
+  function fillGroupScheduleSelect() {
+    const sel = $("#group-schedule-select");
+    if (!sel) return;
+
+    const current = sel.value;
+    const groups = Array.from(GroupsCache.byId?.values?.() || [])
+      .filter((g) => Number.isFinite(Number(g.id)))
+      .sort((a, b) =>
+        groupDisplayName(a, a.id).localeCompare(groupDisplayName(b, b.id), "ru")
+      );
+
+    sel.innerHTML = "";
+
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "— выберите группу —";
+    sel.appendChild(empty);
+
+    for (const g of groups) {
+      const opt = document.createElement("option");
+      opt.value = String(g.id);
+      opt.textContent = groupDisplayName(g, g.id);
+      sel.appendChild(opt);
+    }
+
+    if (groups.some((g) => String(g.id) === current)) {
+      sel.value = current;
+    }
+  }
 
   async function buildFullSchedule() {
     const myVersion = ++buildVersion;
@@ -414,7 +562,7 @@
 
     // по дням недели
     for (const day of DAYS) {
-      const rows = [];
+      let rows = [];
 
       for (const [slotId, slotInfo] of slotMap.entries()) {
         /* eslint-disable no-await-in-loop */
@@ -447,6 +595,7 @@
           rows.push({
             slotId,
             slotLabel: slotInfo.label,
+            classroomId: classroomPk,
             buildingId,
             buildingName,
             floorNum,
@@ -459,6 +608,7 @@
       if (!rows.length) {
         continue;
       }
+      rows = mergeScheduleRows(rows);
 
       // сортировка занятий внутри дня
       rows.sort((a,b) =>
@@ -474,22 +624,58 @@
       dayWrap.className = "ts-day";
       dayWrap.innerHTML = `<h5 style="margin:8px 0 4px">${day.label}</h5>`;
 
-      const dayList = document.createElement("div");
-      dayList.className = "ts-day-list";
-      dayWrap.appendChild(dayList);
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "ts-table-wrap";
+
+      const table = document.createElement("table");
+      table.className = "ts-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Пара</th>
+            <th>Корпус</th>
+            <th>Этаж</th>
+            <th>Аудитория</th>
+            <th>Группа</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      const tbody = table.querySelector("tbody");
+      tableWrap.appendChild(table);
+      dayWrap.appendChild(tableWrap);
 
       for (const it of rows) {
-        const row = document.createElement("div");
-        row.className = "ts-item";
-        row.style.padding = "2px 0";
+        const row = document.createElement("tr");
+        row.className = "ts-item ts-table-row";
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `${day.label}: ${it.slotLabel}, ${it.roomName}`);
 
         // пример строки:
         // 08:00 – 09:30 — ф, 2 эт., Ауд. 101 • гр. 23кб
-        row.innerHTML =
-          `<b>${it.slotLabel}</b> — ${it.buildingName}, <b>${it.floorNum} эт.</b>, <b>${it.roomName}</b>` +
-          (it.groupName ? ` • <span class="muted">гр. ${it.groupName}</span>` : "");
+        const slotCell = document.createElement("td");
+        slotCell.className = "ts-slot";
+        slotCell.textContent = it.slotLabel;
 
-        row.addEventListener("click", () => {
+        const buildingCell = document.createElement("td");
+        buildingCell.textContent = it.buildingName;
+
+        const floorCell = document.createElement("td");
+        floorCell.className = "ts-floor";
+        floorCell.textContent = `${it.floorNum} эт.`;
+
+        const roomCell = document.createElement("td");
+        roomCell.className = "ts-room";
+        roomCell.textContent = it.roomName;
+
+        const groupCell = document.createElement("td");
+        groupCell.className = "ts-group";
+        groupCell.textContent = it.groupName ? `гр. ${it.groupName}` : "";
+
+        row.append(slotCell, buildingCell, floorCell, roomCell, groupCell);
+
+        const openScheduleItem = () => {
           // 1) проставить чётность / день / слот
           setScheduleControls({
             weekType: wtObj.value,
@@ -502,9 +688,17 @@
 
           // 3) подсветить аудиторию
           delayedHighlight(it.roomName);
+        };
+
+        row.addEventListener("click", openScheduleItem);
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openScheduleItem();
+          }
         });
 
-        dayList.appendChild(row);
+        tbody.appendChild(row);
       }
 
       weekBox.appendChild(dayWrap);
@@ -521,15 +715,217 @@
     list.appendChild(frag);
   }
 
+  async function buildGroupSchedule() {
+    const myVersion = ++groupBuildVersion;
+
+    const block = $("#group-schedule-block");
+    const list  = $("#group-schedule-list");
+    const empty = $("#group-schedule-empty");
+    const title = block?.querySelector("h3");
+    const groupSel = $("#group-schedule-select");
+    if (!block || !list || !empty || !groupSel) return;
+
+    await Promise.all([
+      ensureGroupsLoaded(),
+      ensureRoomsMetaLoaded(),
+      ensureBuildingsLoaded(),
+      ensureTeachersLoaded()
+    ]);
+
+    fillGroupScheduleSelect();
+    block.hidden = false;
+    list.innerHTML = "";
+    empty.style.display = "none";
+
+    const groupId = Number(groupSel.value || 0);
+    if (!Number.isFinite(groupId) || groupId <= 0) {
+      if (title) title.textContent = "Расписание группы";
+      empty.textContent = "Выберите группу";
+      empty.style.display = "block";
+      return;
+    }
+
+    const groupObj = GroupsCache.byId.get(groupId);
+    const groupName = groupDisplayName(groupObj, groupId);
+    const wtVal = currentWeekType();
+    const wtObj = wtByValue.get(wtVal) || { value: wtVal, label: wtVal };
+    if (title) {
+      title.textContent = `Расписание группы ${groupName} — ${wtObj.label}`;
+    }
+
+    let slotMap = slotMapFromSelect();
+    if (!slotMap.size) {
+      slotMap = await loadSlotsFromApi();
+    }
+    if (!slotMap.size) {
+      list.innerHTML = `<div class="muted">Слоты не найдены.</div>`;
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    const weekSection = document.createElement("section");
+    weekSection.className = "ts-weektype";
+    weekSection.innerHTML = `<h4 style="margin-top:14px">${wtObj.label}</h4>`;
+    const weekBox = document.createElement("div");
+    weekBox.className = "ts-weekbox";
+    weekSection.appendChild(weekBox);
+
+    for (const day of DAYS) {
+      const rows = [];
+
+      for (const [slotId, slotInfo] of slotMap.entries()) {
+        /* eslint-disable no-await-in-loop */
+        const { data } = await fetchGroupBookings(groupId, day.value, wtObj.value, slotId);
+        /* eslint-enable no-await-in-loop */
+
+        for (const b of data) {
+          const classroomPk = Number(b.classroomId);
+          const rm = RoomsMeta.byId.get(classroomPk);
+          if (!rm) continue;
+
+          const floorNumRaw = (b.floor != null ? Number(b.floor) : rm.floor);
+          const floorNum = Number.isFinite(floorNumRaw) ? floorNumRaw : 0;
+
+          const buildingIdRaw = (b.buildingId != null ? Number(b.buildingId) : rm.buildingId);
+          const buildingId = Number.isFinite(buildingIdRaw) ? buildingIdRaw : null;
+          const buildingName = resolveBuildingName(buildingId, rm);
+
+          const teacherId = Number(b.teacherId);
+          const teacherObj = TeachersCache.byId.get?.(teacherId);
+
+          rows.push({
+            slotId,
+            slotLabel: slotInfo.label,
+            classroomId: classroomPk,
+            buildingId,
+            buildingName,
+            floorNum,
+            roomName: firstText(rm.name) || `Ауд. ${classroomPk}`,
+            teacherName: Number.isFinite(teacherId) ? teacherDisplayName(teacherObj, teacherId) : ""
+          });
+        }
+      }
+
+      if (!rows.length) {
+        continue;
+      }
+
+      rows.sort((a,b) =>
+        (a.slotId - b.slotId) ||
+        a.buildingName.localeCompare(b.buildingName, "ru") ||
+        (a.floorNum - b.floorNum) ||
+        a.roomName.localeCompare(b.roomName, "ru") ||
+        a.teacherName.localeCompare(b.teacherName, "ru")
+      );
+
+      const dayWrap = document.createElement("div");
+      dayWrap.className = "ts-day";
+      dayWrap.innerHTML = `<h5 style="margin:8px 0 4px">${day.label}</h5>`;
+
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "ts-table-wrap";
+
+      const table = document.createElement("table");
+      table.className = "ts-table";
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Пара</th>
+            <th>Корпус</th>
+            <th>Этаж</th>
+            <th>Аудитория</th>
+            <th>Преподаватель</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+      const tbody = table.querySelector("tbody");
+      tableWrap.appendChild(table);
+      dayWrap.appendChild(tableWrap);
+
+      for (const it of rows) {
+        const row = document.createElement("tr");
+        row.className = "ts-item ts-table-row";
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `${day.label}: ${it.slotLabel}, ${it.roomName}`);
+
+        const slotCell = document.createElement("td");
+        slotCell.className = "ts-slot";
+        slotCell.textContent = it.slotLabel;
+
+        const buildingCell = document.createElement("td");
+        buildingCell.textContent = it.buildingName;
+
+        const floorCell = document.createElement("td");
+        floorCell.className = "ts-floor";
+        floorCell.textContent = `${it.floorNum} эт.`;
+
+        const roomCell = document.createElement("td");
+        roomCell.className = "ts-room";
+        roomCell.textContent = it.roomName;
+
+        const teacherCell = document.createElement("td");
+        teacherCell.className = "ts-group";
+        teacherCell.textContent = it.teacherName || "—";
+
+        row.append(slotCell, buildingCell, floorCell, roomCell, teacherCell);
+
+        const openScheduleItem = () => {
+          setScheduleControls({
+            weekType: wtObj.value,
+            day: day.value,
+            slotId: it.slotId
+          });
+          pickBuildingAndFloor(it.buildingId, it.floorNum);
+          delayedHighlight(it.roomName);
+        };
+
+        row.addEventListener("click", openScheduleItem);
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openScheduleItem();
+          }
+        });
+
+        tbody.appendChild(row);
+      }
+
+      weekBox.appendChild(dayWrap);
+
+      if (myVersion !== groupBuildVersion) return;
+    }
+
+    if (!weekBox.children.length) {
+      empty.textContent = "Занятий не найдено";
+      empty.style.display = "block";
+    }
+
+    frag.appendChild(weekSection);
+    list.appendChild(frag);
+  }
+
   // =========================
   // init + подписки
   // =========================
-  function init() {
+  function rebuildSchedules() {
     buildFullSchedule();
+    buildGroupSchedule();
+  }
+
+  function refreshSchedules() {
+    bookingsCache.clear();
+    rebuildSchedules();
+  }
+
+  function init() {
+    rebuildSchedules();
 
     // если пользователь вручную меняет чётность недели или слот — перестраиваем
-    $("#sch-weektype")?.addEventListener("change", () => buildFullSchedule());
-    $("#slot-filter") ?.addEventListener("change", () => buildFullSchedule());
+    $("#sch-weektype")?.addEventListener("change", rebuildSchedules);
+    $("#slot-filter") ?.addEventListener("change", rebuildSchedules);
+    $("#group-schedule-select")?.addEventListener("change", buildGroupSchedule);
 
     // если слоты подгружаются асинхронно в plan-page.js — ждём появления реальных options
     const slotSel = $("#slot-filter");
@@ -538,7 +934,7 @@
         const ok = Array.from(slotSel.options).some(o => Number(o.value || 0) > 0);
         if (ok) {
           obs.disconnect();
-          buildFullSchedule();
+          rebuildSchedules();
         }
       });
       obs.observe(slotSel, { childList: true });
@@ -549,4 +945,6 @@
 
   // наружу — чтобы можно было вручную пересобрать расписание
   window.buildTeacherScheduleFull = buildFullSchedule;
+  window.buildGroupScheduleFull = buildGroupSchedule;
+  window.refreshSchedules = refreshSchedules;
 })();

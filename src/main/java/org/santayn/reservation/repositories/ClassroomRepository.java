@@ -4,6 +4,7 @@ import org.santayn.reservation.models.classroom.Classroom;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;
+import java.util.List;
 
 /**
  * Репозиторий для аудиторий.
@@ -24,4 +25,7 @@ public interface ClassroomRepository extends JpaRepository<Classroom, Long> {
      */
     Optional<Classroom> findFirstByNameContainingIgnoreCase(String token);
     Optional<Classroom> findByNameIgnoreCase(String name);
+    Optional<Classroom> findByBuilding_IdAndNameIgnoreCase(Long buildingId, String name);
+    Optional<Classroom> findByBuildingIsNullAndNameIgnoreCase(String name);
+    List<Classroom> findAllByNameIgnoreCase(String name);
 }

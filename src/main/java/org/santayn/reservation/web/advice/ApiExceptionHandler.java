@@ -32,4 +32,18 @@ public class ApiExceptionHandler {
                 Map.of("timestamp", Instant.now(), "errors", errors)
         );
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> handleBadRequest(IllegalArgumentException e) {
+        return ResponseEntity.badRequest().body(
+                Map.of("timestamp", Instant.now(), "error", e.getMessage())
+        );
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<?> handleConflict(IllegalStateException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                Map.of("timestamp", Instant.now(), "error", e.getMessage())
+        );
+    }
 }

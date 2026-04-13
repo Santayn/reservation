@@ -397,9 +397,9 @@
     stage.style.position = "relative";
     stage.style.width = stageW + "px";
     stage.style.height = stageH + "px";
-    stage.style.border = "2px solid #222";
-    stage.style.borderRadius = "10px";
-    stage.style.background = "#fffdf4";
+    stage.style.border = "1px solid #b9c8c3";
+    stage.style.borderRadius = "8px";
+    stage.style.background = "#f8fbfa";
     stage.style.margin = "0 auto";
     stage.style.overflow = "hidden";
 
@@ -706,29 +706,16 @@
     btn?.addEventListener("click", () => menu.classList.toggle("open"));
 
     apply?.addEventListener("click", () => {
-      const facId  = facultySel.value.trim();
-      const specId = specSel.value.trim();
-      const rooms  = $all(".room");
-
-      rooms.forEach(r => {
-        const name = r.dataset.room || r.textContent.trim();
-        const meta = RoomsMeta.byName.get(name);
-
-        const facMatch  = !facId  || (meta?.facultyIds || []).map(String).includes(facId);
-        const specMatch = !specId || (meta?.specializationIds || []).map(String).includes(specId);
-        const match = facMatch && specMatch;
-
-        r.classList.toggle("filter-hit", match);
-        r.classList.toggle("dim", !match);
-      });
-
+      applyRoomMetadataFilter();
+      refreshOccupancy();
       menu.classList.remove("open");
     });
 
     clear?.addEventListener("click", () => {
       facultySel.value = "";
       specSel.value    = "";
-      $all(".room").forEach(r => r.classList.remove("filter-hit","dim"));
+      applyRoomMetadataFilter();
+      refreshOccupancy();
       menu.classList.remove("open");
     });
 
@@ -736,6 +723,35 @@
       if (!menu?.contains(e.target) && !btn?.contains(e.target)) {
         menu?.classList.remove("open");
       }
+    });
+  }
+
+  function getRoomFilterValues() {
+    return {
+      facultyId: $("#flt-faculty")?.value?.trim() || "",
+      specializationId: $("#flt-spec")?.value?.trim() || ""
+    };
+  }
+
+  function roomMatchesMetadataFilter(roomName) {
+    const { facultyId, specializationId } = getRoomFilterValues();
+    if (!facultyId && !specializationId) return true;
+
+    const meta = RoomsMeta.byName.get((roomName || "").trim());
+    const facMatch = !facultyId || (meta?.facultyIds || []).map(String).includes(facultyId);
+    const specMatch = !specializationId || (meta?.specializationIds || []).map(String).includes(specializationId);
+    return facMatch && specMatch;
+  }
+
+  function applyRoomMetadataFilter() {
+    const { facultyId, specializationId } = getRoomFilterValues();
+    const filterActive = !!facultyId || !!specializationId;
+
+    $all(".room").forEach(r => {
+      const name = r.dataset.room || r.textContent.trim();
+      const match = roomMatchesMetadataFilter(name);
+      r.classList.toggle("filter-hit", filterActive && match);
+      r.classList.toggle("dim", filterActive && !match);
     });
   }
 
@@ -788,8 +804,7 @@
         const sched = window.SchedulePanel?.getSettings?.() || {
           dayOfWeek:"", weekParityType:"ANY"
         };
-        const wtSel = $("#sch-weektype")?.value;
-        const weekParityType = wtSel || sched.weekParityType || "ANY";
+        const weekParityType = sched.weekParityType || "ANY";
 
         if (!sched.dayOfWeek){
           const dateStr = $("#date-input")?.value || "";
@@ -831,54 +846,74 @@
     }
 
     const dayOfWeek      = sched.dayOfWeek;
-    const weekParityType = $("#sch-weektype")?.value || sched.weekParityType || "ANY";
+    const weekParityType = sched.weekParityType || "ANY";
     const slotId         = Number($("#slot-filter")?.value || 0);
     const myOnly         = !!sched.myOnly;
+    const dateStr        = $("#date-input")?.value || "";
 
     const rooms = $all(".room");
+    applyRoomMetadataFilter();
+
+    if (!slotId || !dayOfWeek || !dateStr) {
+      rooms.forEach(btn => {
+        const capacity = Number(btn.dataset.capacity || 0);
+        paintRoom(btn, 0, capacity);
+      });
+      return;
+    }
+
+    const usageByRoomId = await fetchUsageForRooms({
+      date: dateStr,
+      dayOfWeek,
+      weekParityType,
+      slotId,
+      myOnly
+    });
+
     for (const btn of rooms) {
       const roomName      = btn.dataset.room || btn.textContent.trim();
       const capacity      = Number(btn.dataset.capacity || 0);
       const classroomDbId = getRealClassroomIdByName(roomName);
 
-      if (!classroomDbId || !slotId || !dayOfWeek) {
+      if (!classroomDbId || !roomMatchesMetadataFilter(roomName)) {
         paintRoom(btn, 0, capacity);
         continue;
       }
 
-      const usedPersons = await fetchUsageForRoom(
-        classroomDbId,
-        dayOfWeek,
-        weekParityType,
-        slotId,
-        myOnly
-      );
-
+      const usedPersons = usageByRoomId.get(classroomDbId) || 0;
       paintRoom(btn, usedPersons, capacity);
     }
   }
 
-  async function fetchUsageForRoom(classroomDbId, dayOfWeek, weekParityType, slotId, myOnly){
+  async function fetchUsageForRooms({ date, dayOfWeek, weekParityType, slotId, myOnly }){
+    const { facultyId, specializationId } = getRoomFilterValues();
     const params = new URLSearchParams({
+      date,
       dayOfWeek,
       weekParityType,
       slotId: String(slotId),
-      classroomId: String(classroomDbId),
-      slim: "true"
+      myOnly: String(!!myOnly)
     });
 
-    const baseUrl = myOnly ? "/api/bookings/my" : "/api/bookings/search";
+    if (facultyId) {
+      params.set("facultyId", facultyId);
+    }
+    if (specializationId) {
+      params.set("specializationId", specializationId);
+    }
 
-    const r = await fetch(`${baseUrl}?${params.toString()}`, { credentials:"include" });
-    if (!r.ok) return 0;
+    const r = await fetch(`/api/utilization/rooms?${params.toString()}`, { credentials:"include" });
+    if (!r.ok) return new Map();
 
     const list = await r.json();
-    let total = 0;
-    for (const b of list){
-      const g = GroupsCache.byId.get(Number(b.groupId));
-      total += g ? Number(g.personsCount || 0) : 0;
+    const usageByRoomId = new Map();
+    for (const row of Array.isArray(list) ? list : []){
+      const roomId = Number(row.classroomId);
+      if (Number.isFinite(roomId)) {
+        usageByRoomId.set(roomId, Number(row.load || 0));
+      }
     }
-    return total;
+    return usageByRoomId;
   }
 
   function paintRoom(btn, usedPersons, capacity){
@@ -898,6 +933,8 @@
     $("#date-input")      ?.addEventListener("change", refreshOccupancy);
     $("#sch-weektype")    ?.addEventListener("change", refreshOccupancy);
     $("#sch-day")         ?.addEventListener("change", refreshOccupancy);
+    $("#sch-mode-weekly") ?.addEventListener("change", refreshOccupancy);
+    $("#sch-mode-parity") ?.addEventListener("change", refreshOccupancy);
     $("#slot-filter")     ?.addEventListener("change", refreshOccupancy);
     $("#building-select") ?.addEventListener("change", refreshOccupancy);
     $("#layout-select")   ?.addEventListener("change", refreshOccupancy);

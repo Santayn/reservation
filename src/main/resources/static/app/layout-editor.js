@@ -807,6 +807,14 @@
 
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
+        if (resp.status === 401) {
+          alert("Ошибка сохранения схемы.\nНужно заново войти в систему.");
+          return;
+        }
+        if (resp.status === 403) {
+          alert("Ошибка сохранения схемы.\nНедостаточно прав: сохранять схемы может только администратор.");
+          return;
+        }
         alert("Ошибка сохранения схемы.\n" + (errText || ("HTTP " + resp.status)));
         return;
       }
@@ -1064,6 +1072,37 @@
     $("#sel-building").addEventListener("change", onBuildingChangedExternal);
   }
 
+  function getInitialLayoutIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("layoutId");
+    if (!raw) return null;
+
+    const layoutId = parseInt(raw, 10);
+    return Number.isNaN(layoutId) ? null : layoutId;
+  }
+
+  async function loadInitialLayoutFromUrl() {
+    const layoutId = getInitialLayoutIdFromUrl();
+    if (!layoutId) return false;
+
+    const dto = await getLayoutById(layoutId);
+    if (!dto) {
+      alert("Не удалось загрузить схему #" + layoutId + " с сервера.");
+      return false;
+    }
+
+    loadDtoIntoEditor(dto);
+    state.currentBuildingId = dto.buildingId ?? null;
+
+    if (state.currentBuildingId != null) {
+      $("#sel-building").value = String(state.currentBuildingId);
+      await refreshLayoutsInUI();
+      $("#sel-existing-layout").value = String(dto.id);
+    }
+
+    return true;
+  }
+
   async function init() {
     initPaletteButtons();
     bindInspectorInputs();
@@ -1071,6 +1110,10 @@
     bindTopUIEvents();
 
     await loadBuildingsToSelect();
+
+    if (await loadInitialLayoutFromUrl()) {
+      return;
+    }
 
     // если есть корпуса, по умолчанию ставим первый
     if (state.buildings.length > 0) {
